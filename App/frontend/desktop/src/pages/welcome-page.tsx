@@ -1,21 +1,13 @@
 /** Welcome page module. */
-import type { OnboardingStateDto } from "@memmy/local-api-contracts";
 import { Gift, Key } from "lucide-react";
-import { useEffect, useState } from "react";
-import { resolveDesktopAccountChannel } from "../app/account-channel.js";
-import { buildInvitationSignupEvent } from "../app/invitation-analytics.js";
-import { resolveInvitationToastKind } from "../app/invitation-result.js";
+import { useState } from "react";
+import { useAnalytics } from "../analytics/use-analytics.js";
 import { persistLoginModeSelection } from "../app/login-mode.js";
 import { useApiClients } from "../app/providers.js";
-import { buildAccountOnboardingStartPatch, resolveByokEntry, resolvePostLoginRoute, shouldShowFirstEncounterReport } from "../app/routes.js";
-import { AuthCodeForm } from "../components/auth-code-form.js";
+import { resolveByokEntry } from "../app/routes.js";
+import { AccountAuthPanel } from "../components/account-auth-panel.js";
 import { LanguageToggleButton } from "../components/language-toggle-button.js";
 import { Memmy } from "../components/mascot/memmy.js";
-import { useVerificationCodeAuth } from "../components/use-verification-code-auth.js";
-import { setAnalyticsUserId } from "../analytics/analytics-context.js";
-import { useAnalytics } from "../analytics/use-analytics.js";
-import { getLegalLinkUrl } from "../legal/legal-links.js";
-import { openExternalUrl } from "../utils/open-url.js";
 import { useTranslation } from "../i18n/use-translation.js";
 import { appActions } from "../state/app-actions.js";
 import { useAppState } from "../state/app-state.js";
@@ -27,122 +19,18 @@ export function WelcomePage() {
   const { clients } = useApiClients();
   const { track } = useAnalytics();
   const { t, language } = useTranslation();
-  const verificationCodeAuth = useVerificationCodeAuth();
-  const [identifier, setIdentifier] = useState("");
-  const [code, setCode] = useState("");
-  const [inviteCode, setInviteCode] = useState("");
   const [modePersistencePending, setModePersistencePending] = useState(false);
   const [modePersistenceFeedback, setModePersistenceFeedback] = useState<{ text: string; tone: "error" | "success" } | null>(null);
-  const [pendingAccountOnboarding, setPendingAccountOnboarding] = useState<Partial<OnboardingStateDto> | null>(null);
-  const channel = resolveDesktopAccountChannel();
-  const invitationEnabled = state.bootstrap?.promotions?.invitation?.enabled === true;
-  const canContinue = Boolean(identifier.trim() && code.trim());
   const agentChatTokenTotal = state.bootstrap?.promotions?.agentChatTokenTotal;
   const showLoginBanner =
     (state.bootstrap?.promotions?.loginBanner ?? true) && (agentChatTokenTotal ?? 0) > 0;
 
-  // Handles use effect.
-  useEffect(() => {
-    setIdentifier("");
-    setCode("");
-    setInviteCode("");
-    setModePersistenceFeedback(null);
-    setPendingAccountOnboarding(null);
-    verificationCodeAuth.resetInteractionState();
-  }, [channel, verificationCodeAuth.resetInteractionState]);
-
   /** Handles toggle language. */
   function toggleLanguage() {
     const nextLanguage = language === "en-US" ? "zh-CN" : "en-US";
-    verificationCodeAuth.clearFeedback();
     setModePersistenceFeedback(null);
     dispatch(appActions.settingsUpdated({ language: nextLanguage }));
     void clients?.config.updateSettings({ language: nextLanguage }).catch(() => undefined);
-  }
-
-  /** Handles submit login. */
-  async function submitLogin() {
-    if (verificationCodeAuth.loginPending || modePersistencePending) {
-      return;
-    }
-    setModePersistenceFeedback(null);
-    if (pendingAccountOnboarding) {
-      await continueAfterAccountEntry(pendingAccountOnboarding);
-      return;
-    }
-    if (!canContinue) return;
-
-    const loginResult = await verificationCodeAuth.login(
-      channel,
-      identifier,
-      code,
-      invitationEnabled ? inviteCode : undefined
-    );
-    if (!loginResult || !loginResult.session.authenticated) {
-      return;
-    }
-    const session = loginResult.session;
-    // Set before the signup event so it is attributed to the cloud account.
-    setAnalyticsUserId(session.profile.userId);
-    const invitationToastKind = resolveInvitationToastKind(loginResult.invitationResult);
-    if (invitationToastKind) {
-      dispatch(appActions.showInvitationToast(invitationToastKind));
-    }
-
-    track(buildInvitationSignupEvent({
-      channel,
-      isNewUser: session.isNewUser,
-      invitationCode: invitationEnabled ? inviteCode : undefined
-    }));
-
-    dispatch(appActions.accountUpdated({
-      userId: session.profile.userId,
-      email: session.profile.email ?? "",
-      phoneNumber: session.profile.phoneNumber,
-      nickname: session.profile.nickname,
-      registeredAt: session.profile.registeredAt
-    }));
-
-    const onboardingPatch: Partial<OnboardingStateDto> =
-      session.profile.hasFinishedGuide && state.bootstrap && !shouldShowFirstEncounterReport(state.bootstrap.onboarding)
-      ? {
-        completed: true,
-        currentStep: "completed",
-        completedAt: new Date().toISOString(),
-        hasAcceptedTerms: true
-      }
-      : buildAccountOnboardingStartPatch(state.bootstrap?.onboarding);
-    setPendingAccountOnboarding(onboardingPatch);
-    await continueAfterAccountEntry(onboardingPatch);
-  }
-
-  /** Handles continue after account entry. */
-  async function continueAfterAccountEntry(forcedOnboarding?: Partial<OnboardingStateDto>) {
-    const onboarding = state.bootstrap?.onboarding;
-    const onboardingPatch = forcedOnboarding ?? buildAccountOnboardingStartPatch(onboarding);
-    const nextOnboarding = {
-      ...buildAccountOnboardingStartPatch(onboarding),
-      ...onboarding,
-      ...onboardingPatch
-    };
-    const nextRoute = resolvePostLoginRoute({ onboarding: nextOnboarding, preferredMode: state.navigation.preferredMode });
-
-    try {
-      setModePersistencePending(true);
-      await persistLoginModeSelection({
-        configClient: clients?.config,
-        dispatch,
-        userMode: "account",
-        onboarding: onboardingPatch
-      });
-      setPendingAccountOnboarding(null);
-      dispatch(appActions.navigate(nextRoute));
-    } catch (error) {
-      console.error("persist account mode failed", error);
-      setModePersistenceFeedback({ text: t("login.error.modePersistenceFailed"), tone: "error" });
-    } finally {
-      setModePersistencePending(false);
-    }
   }
 
   /** Handles use own api key. */
@@ -215,23 +103,7 @@ export function WelcomePage() {
             )}
 
             <div className={`welcome-login-card__body px-6${showLoginBanner ? " welcome-login-card__body--with-banner" : " welcome-login-card__body--no-banner"}`}>
-              <AuthCodeForm
-                identifier={identifier}
-                identifierType={channel}
-                code={code}
-                inviteCode={inviteCode}
-                disabled={(!canContinue && !pendingAccountOnboarding) || verificationCodeAuth.loginPending || modePersistencePending}
-                sendCodeDisabled={verificationCodeAuth.sendCodeDisabled}
-                sendCodeLabel={verificationCodeAuth.sendCodeLabel}
-                feedback={modePersistenceFeedback ?? verificationCodeAuth.feedback}
-                onIdentifierChange={setIdentifier}
-                onCodeChange={setCode}
-                onInviteCodeChange={invitationEnabled ? setInviteCode : undefined}
-                onSendCode={() => void verificationCodeAuth.sendCode(channel, identifier)}
-                onSubmit={() => void submitLogin()}
-                onOpenTerms={() => void openExternalUrl(getLegalLinkUrl("terms", language, state.bootstrap?.legal))}
-                onOpenDataAgreement={() => void openExternalUrl(getLegalLinkUrl("data", language, state.bootstrap?.legal))}
-              />
+              <AccountAuthPanel />
             </div>
           </div>
 
@@ -250,6 +122,16 @@ export function WelcomePage() {
             <Key size={15} />
             {t("welcome.byok.quickAction")}
           </button>
+
+          {modePersistenceFeedback ? (
+            <p
+              role="alert"
+              aria-live="polite"
+              className="welcome-byok-action-feedback w-full text-left text-[12px] font-normal leading-5 text-status-error"
+            >
+              {modePersistenceFeedback.text}
+            </p>
+          ) : null}
           </div>
         </div>
       </div>

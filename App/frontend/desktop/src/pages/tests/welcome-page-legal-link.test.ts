@@ -5,14 +5,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getLegalLinkUrl } from "../../legal/legal-links.js";
 
 const welcomePageSourcePath = fileURLToPath(new URL("../welcome-page.tsx", import.meta.url));
+const authPanelSourcePath = fileURLToPath(new URL("../../components/account-auth-panel.tsx", import.meta.url));
 
+// The welcome page hands its auth card to the shared panel, so the consent entries now live there.
 describe("WelcomePage 协议入口外链", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
   it("服务协议入口用当前语言的外链打开系统浏览器", () => {
-    const source = readSource();
+    expect(readSource(welcomePageSourcePath)).toContain("<AccountAuthPanel />");
+    const source = readSource(authPanelSourcePath);
 
     expect(source).toContain('import { openExternalUrl } from "../utils/open-url.js"');
     expect(source).toContain('import { getLegalLinkUrl } from "../legal/legal-links.js"');
@@ -20,16 +23,18 @@ describe("WelcomePage 协议入口外链", () => {
   });
 
   it("数据协议入口用当前语言的外链打开系统浏览器", () => {
-    const source = readSource();
+    const source = readSource(authPanelSourcePath);
 
     expect(source).toContain('onOpenDataAgreement={() => void openExternalUrl(getLegalLinkUrl("data", language, state.bootstrap?.legal))}');
   });
 
   it("协议入口不再导航到应用内 /terms 或 /data-use 路由", () => {
-    const source = readSource();
+    for (const path of [welcomePageSourcePath, authPanelSourcePath]) {
+      const source = readSource(path);
 
-    expect(source).not.toContain('appActions.navigate("/terms")');
-    expect(source).not.toContain('appActions.navigate("/data-use")');
+      expect(source).not.toContain('appActions.navigate("/terms")');
+      expect(source).not.toContain('appActions.navigate("/data-use")');
+    }
   });
 
   it("getLegalLinkUrl 随语言联动:中英文取到不同的协议页地址", () => {
@@ -41,6 +46,6 @@ describe("WelcomePage 协议入口外链", () => {
   });
 });
 
-function readSource(): string {
-  return readFileSync(welcomePageSourcePath, "utf8");
+function readSource(path: string): string {
+  return readFileSync(path, "utf8");
 }

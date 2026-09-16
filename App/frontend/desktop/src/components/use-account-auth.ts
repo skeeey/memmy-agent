@@ -56,7 +56,7 @@ type AuthTranslate = (key: MessageKey, values?: Record<string, string | number>)
  */
 export function toFeedbackText(error: unknown, t: AuthTranslate): string {
   if (error instanceof ApiRequestError && error.code !== null && error.code !== "internal") {
-    return error.message;
+    return error.message || t("account.error.requestFailed");
   }
   return t("account.error.requestFailed");
 }
