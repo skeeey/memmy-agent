@@ -1,6 +1,6 @@
 import type { RuntimeConfig } from "@memmy/local-api-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createHttpAccountClient, resolveAccountIdentifier, validateAccountCodeInput } from "../account-client.js";
+import { createHttpAccountClient } from "../account-client.js";
 
 const config: RuntimeConfig = {
   baseUrl: "http://127.0.0.1:18100",
@@ -12,36 +12,6 @@ afterEach(() => {
 });
 
 describe("account-client", () => {
-  it("把邮箱或手机号解析为账号验证码输入标识", () => {
-    expect(resolveAccountIdentifier(" grace@example.com ")).toEqual({
-      channel: "email",
-      email: "grace@example.com"
-    });
-    expect(resolveAccountIdentifier(" 13800138000 ")).toEqual({
-      channel: "phone",
-      phoneNumber: "13800138000"
-    });
-    expect(resolveAccountIdentifier(" ")).toBeNull();
-  });
-
-  it("登录表单提交前返回可展示的账号与验证码校验结果", () => {
-    expect(validateAccountCodeInput({ identifier: "1", code: "1", requireCode: true })).toEqual({
-      ok: false,
-      reason: "identifier"
-    });
-    expect(validateAccountCodeInput({ identifier: "13800138000", code: "", requireCode: true })).toEqual({
-      ok: false,
-      reason: "code"
-    });
-    expect(validateAccountCodeInput({ identifier: " grace@example.com ", code: "123456", requireCode: true })).toEqual({
-      ok: true,
-      identifier: {
-        channel: "email",
-        email: "grace@example.com"
-      }
-    });
-  });
-
   it("读取本地账号会话真实路由", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       expect(input.toString()).toBe("http://127.0.0.1:18100/api/account/session");
@@ -85,7 +55,7 @@ describe("account-client", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("通过真实本地 API 完成验证码发送、校验和昵称更新", async () => {
+  it("通过真实本地 API 完成注册、登录和昵称更新", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input.toString();
       const body = init?.body ? JSON.parse(String(init.body)) : null;
@@ -93,32 +63,29 @@ describe("account-client", () => {
         "x-memmy-local-token": "token"
       });
 
-      if (url.endsWith("/api/account/send-code")) {
+      if (url.endsWith("/api/account/register")) {
         expect(init?.method).toBe("POST");
-        expect(body).toEqual({
-          channel: "email",
-          email: "grace@example.com",
-          locale: "zh"
-        });
-        return jsonResponse({ ok: true, resendAfterSec: 60 });
-      }
-
-      if (url.endsWith("/api/account/verify-code")) {
-        expect(init?.method).toBe("POST");
-        expect(body).toEqual({
-          channel: "email",
-          email: "grace@example.com",
-          verificationCode: "123456",
-          loginSource: "Memmy",
-          invitationCode: "MEMMY-A1B2C3"
-        });
+        expect(body).toEqual({ username: "grace", password: "Passw0rd1" });
         return jsonResponse({
           session: {
             authenticated: true,
             isNewUser: true,
             profile: profilePayload({ nickname: "Grace" })
           },
-          invitationResult: { status: "not_provided" }
+          provisioning: provisioningPayload()
+        });
+      }
+
+      if (url.endsWith("/api/account/login")) {
+        expect(init?.method).toBe("POST");
+        expect(body).toEqual({ username: "grace", password: "Passw0rd1" });
+        return jsonResponse({
+          session: {
+            authenticated: true,
+            isNewUser: false,
+            profile: profilePayload({ nickname: "Grace" })
+          },
+          provisioning: provisioningPayload()
         });
       }
 
@@ -158,25 +125,21 @@ describe("account-client", () => {
 
     const client = createHttpAccountClient(config);
 
-    await expect(client.sendCode({ channel: "email", email: "grace@example.com", locale: "zh" })).resolves.toEqual({
-      ok: true,
-      resendAfterSec: 60
-    });
-    await expect(
-      client.verifyCode({
-        channel: "email",
-        email: "grace@example.com",
-        verificationCode: "123456",
-        loginSource: "Memmy",
-        invitationCode: "MEMMY-A1B2C3"
-      })
-    ).resolves.toMatchObject({
+    await expect(client.register({ username: "grace", password: "Passw0rd1" })).resolves.toMatchObject({
       session: {
         authenticated: true,
         isNewUser: true,
         profile: { email: "grace@example.com", nickname: "Grace" }
       },
-      invitationResult: { status: "not_provided" }
+      provisioning: { apiKey: "cr-desktop-key", model: "gpt-oss-120b" }
+    });
+    await expect(client.login({ username: "grace", password: "Passw0rd1" })).resolves.toMatchObject({
+      session: {
+        authenticated: true,
+        isNewUser: false,
+        profile: { email: "grace@example.com", nickname: "Grace" }
+      },
+      provisioning: { apiBase: "https://cuberouter.example/v1" }
     });
     await expect(client.getInvitation()).resolves.toMatchObject({
       invitationCode: "MEMMY-A1B2C3",
@@ -204,6 +167,19 @@ function jsonResponse(payload: unknown): Response {
     status: 200,
     headers: { "content-type": "application/json" }
   });
+}
+
+/**
+ * Builds the model provisioning payload returned by register and login.
+ *
+ * @returns A provisioning payload that conforms to the local API contract.
+ */
+function provisioningPayload() {
+  return {
+    apiKey: "cr-desktop-key",
+    apiBase: "https://cuberouter.example/v1",
+    model: "gpt-oss-120b"
+  };
 }
 
 /**
