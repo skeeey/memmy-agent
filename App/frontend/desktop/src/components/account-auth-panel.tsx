@@ -30,6 +30,11 @@ export function AccountAuthPanel() {
   // continuation, never the register/login call (re-registering would fail outright).
   const [pendingAuthResult, setPendingAuthResult] = useState<CuberouterAuthResult | null>(null);
 
+  /** Drops a stored authentication result: new credentials must authenticate from scratch. */
+  function clearPendingAuthResult() {
+    setPendingAuthResult(null);
+  }
+
   async function submit() {
     if (auth.pending || continuing) return;
     setWarning(null);
@@ -145,10 +150,10 @@ export function AccountAuthPanel() {
         confirmPassword={mode === "register" ? confirmPassword : undefined}
         disabled={auth.pending || continuing}
         feedback={auth.feedback ?? (warning ? { text: warning, tone: "error" } : null)}
-        onUsernameChange={setUsername}
-        onPasswordChange={setPassword}
-        onConfirmPasswordChange={setConfirmPassword}
-        onModeChange={(next) => { auth.clearFeedback(); setMode(next); }}
+        onUsernameChange={(next) => { clearPendingAuthResult(); setUsername(next); }}
+        onPasswordChange={(next) => { clearPendingAuthResult(); setPassword(next); }}
+        onConfirmPasswordChange={(next) => { clearPendingAuthResult(); setConfirmPassword(next); }}
+        onModeChange={(next) => { auth.clearFeedback(); clearPendingAuthResult(); setMode(next); }}
         onSubmit={() => void submit()}
         onOpenTerms={() => void openExternalUrl(getLegalLinkUrl("terms", language, state.bootstrap?.legal))}
         onOpenDataAgreement={() => void openExternalUrl(getLegalLinkUrl("data", language, state.bootstrap?.legal))}

@@ -148,6 +148,24 @@ describe("auth flow", () => {
     expect(order.filter((entry) => entry === "updateSettings")).toHaveLength(2);
   });
 
+  it("续接失败后改动用户名会重新认证新账号，而不是续接上一个账号", async () => {
+    const server = createAuthServer(order, { failFirstModePersist: true });
+    mocks.clients = server.client;
+    await renderPanel();
+    await fillCredentials();
+    await clickButton("account.register");
+
+    await vi.waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toBe("login.error.modePersistenceFailed"));
+
+    // Retyping the username abandons the stored result: the second submit must authenticate
+    // the new credentials rather than provisioning the first account again.
+    await fillInput(0, "bob");
+    await clickButton("account.register");
+
+    await vi.waitFor(() => expect(mocks.dispatch).toHaveBeenCalledWith(appActions.navigate("/onboarding")));
+    expect(server.registerUsernames()).toEqual(["alice", "bob"]);
+  });
+
   async function renderPanel() {
     await act(async () => root.render(createElement(AccountAuthPanel)));
   }
@@ -222,11 +240,13 @@ function createAuthServer(
   let catalog: ModelConfigView = createModelWorkspace(null).catalog;
   let written: ModelConfigInput | null = null;
   let modePersistAttempts = 0;
+  const registerUsernames: string[] = [];
   return {
     client: {
       account: {
-        register: vi.fn(async () => {
+        register: vi.fn(async (input: { username: string }) => {
           order.push("account.register");
+          registerUsernames.push(input.username);
           return authResult();
         }),
         login: vi.fn(async () => {
@@ -262,7 +282,8 @@ function createAuthServer(
         })
       }
     } as unknown as AppClients,
-    savedInput: () => written && structuredClone(written)
+    savedInput: () => written && structuredClone(written),
+    registerUsernames: () => [...registerUsernames]
   };
 }
 
