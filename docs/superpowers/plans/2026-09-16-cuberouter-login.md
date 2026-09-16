@@ -1171,7 +1171,16 @@ import type { CuberouterAccountService } from "../../../../services/cuberouter-a
 `App/backend/src/services/account-service.ts`：
 - 删除 `sendCode`、`verifyCode` 及其在 `AccountService` 接口里的声明
 - 删除 `assertExpectedAccountChannel` 函数、`CreateAccountServiceOptions.accountChannel` 字段，以及 `SendCodeInput`/`SendCodeResponse`/`VerifyCodeInput`/`AccountLoginResultView` 相关 import
-- `getInvitation()` 改为：当前会话 `getAuthChannel() === "cuberouter"` 时直接返回
+- **凡是拿 `getCloudUuid()` 当 bearer 去请求 memmy 云的路径，都要在 cuberouter 身份下短路。**统一用 `options.accountSessionRepository.getAuthChannel() === "cuberouter"` 判断。具体五处：
+
+```ts
+  // 便捷判断，放在 createAccountService 内部
+  function isCuberouterSession(): boolean {
+    return options.accountSessionRepository.getAuthChannel() === "cuberouter";
+  }
+```
+
+  1. `getInvitation()` → 直接返回
 
 ```ts
       return AccountInvitationViewSchema.parse({
@@ -1182,7 +1191,14 @@ import type { CuberouterAccountService } from "../../../../services/cuberouter-a
       });
 ```
 
-（保留云端分支给 `identityProvider === "memmy_cloud"` 的老会话）
+  2. `getSession()` → 直接 `return AccountSessionViewSchema.parse(options.accountSessionRepository.get())`，**不进 `refreshCloudGuideState`**。这一处不改会出大问题：cuberouter 会话的 `getCloudUuid()` 现在是 JWT，拿它去请求 memmy 云必然 401，而 `refreshCloudGuideState` 的 `onAuthenticationInvalid` 会调 `clearLocalAccountState` 把会话清掉——**每次重启都掉登录**（与 Task 4 Step 6 修的是同一类问题）。
+  3. `updateProfile()` → 只改本地（`accountSessionRepository.upsert`），不调 `cloudClient.updateAccountProfile`。
+  4. `markGuideFinished()` → 直接 `return { ok: true }`，不调 `cloudClient.updateAccountGuide`（spec §7：云端 guide 状态改为本地记录）。
+  5. `logout()` → 跳过 `cloudClient.logout`，直接清本地会话（D9）。
+
+  （以上都保留云端分支给 `identityProvider === "memmy_cloud"` 的老会话）
+
+- 在 `App/backend/src/services/tests/account-service.test.ts` 加一条回归用例：会话 `authChannel: "cuberouter"` 时 `getSession()` 不调用 `cloudClient.getAccountInfo`（断言该桩未被调用且返回的 `profile.identityProvider === "cuberouter"`），`markGuideFinished()` 不调用 `cloudClient.updateAccountGuide`。
 
 - [ ] **Step 6: 让启动同步接受 cuberouter 身份（否则每次重启都会掉登录）**
 
