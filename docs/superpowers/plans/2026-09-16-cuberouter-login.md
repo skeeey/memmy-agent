@@ -1438,9 +1438,9 @@ const validationMessageKeys: Record<"username" | "password" | "confirm", Message
  * `invalid_argument` and transport failures to `internal`, so a wrong password
  * reaches the user as the server's own sentence while a network error does not.
  */
-function toFeedbackText(error: unknown, t: AuthTranslate): string {
+export function toFeedbackText(error: unknown, t: AuthTranslate): string {
   if (error instanceof ApiRequestError && error.code !== null && error.code !== "internal") {
-    return error.message;
+    return error.message || t("account.error.requestFailed");
   }
   return t("account.error.requestFailed");
 }
@@ -1716,6 +1716,7 @@ git commit -m "feat(auth): replace verification-code form with cuberouter creden
 - Create: `App/frontend/desktop/src/components/account-auth-panel.tsx`
 - Modify: `App/frontend/desktop/src/pages/welcome-page.tsx`、`App/frontend/desktop/src/pages/login-page.tsx`
 - Modify: `App/frontend/desktop/src/pages/tests/auth-flow.test.ts`（Task 5 删掉验证码 hook 后这个文件 21 条断言里有 10 条失败——它驱动的是旧流程。按新流程改写：注入 `register`/`login` 桩，断言"提交用户名密码 → 写模型配置 → 选 byok 模式 → 跳转"）
+- Test: `App/frontend/desktop/src/components/tests/account-auth-panel.test.tsx`（新增。Task 5 的复审指出：`useAccountAuth` 的错误文案分支只被直接调用测过，**没有** hook/组件级的接线测试，而实现者当时"做不到"的说法不成立——仓库里 `bypass` 现成有写法可循：照 `pages/tests/byok-setup-save-feedback.interaction.test.tsx:23-44` 用 `vi.mock("../../app/providers.js", () => ({ useApiClients: () => ({ clients: mocks.clients, setClients: vi.fn() }) }))` + `vi.mock("../../i18n/use-translation.js")`，再用 `createRoot`/`act` 渲染面板，clients 用 `as unknown as AppClients` 的部分对象。用例：让 `clients.account.login` 抛 `new ApiRequestError("用户名或密码不正确", 400, "invalid_argument")` → 断言 `role="alert"` 文本为该句；抛 `new ApiRequestError("boom", 500, "internal")` → 断言为 `account.error.requestFailed` 的译文；抛 `new Error("Failed to fetch")` → 同样为译文。顺带把 `use-account-auth.ts` 的 `toFeedbackText` 补上空消息兜底：`error.message || t("account.error.requestFailed")`——Task 5 的修复丢掉了原来的真值判断，服务端若返回 `{code: 非 internal, message: ""}` 会渲染出一个空告警）
 - Test: `App/frontend/desktop/src/state/tests/model-provisioning.test.ts`
 
 **Interfaces:**
