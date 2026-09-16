@@ -80,6 +80,10 @@ describe("cuberouter client", () => {
       { id: 3, name: "memmy-desktop" },
       { id: 4, name: "other" }
     ]);
+
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:3000/api/token/?p=1&page_size=100");
+    expect(init.method).toBe("GET");
   });
 
   it("creates a never-expiring unlimited token", async () => {
@@ -115,6 +119,36 @@ describe("cuberouter client", () => {
     expect(init.method).toBe("POST");
   });
 
+  it("reads the signed-in profile from the self endpoint", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      expect((init?.headers as Record<string, string>).authorization).toBe("Bearer jwt-1");
+      return jsonResponse({
+        success: true,
+        message: "",
+        data: { id: 7, username: "alice", display_name: "Alice", quota: 100 }
+      });
+    });
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch).getSelf("jwt-1")
+    ).resolves.toEqual({ userId: "7", username: "alice", displayName: "Alice", quota: 100 });
+
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:3000/api/user/self");
+    expect(init.method).toBe("GET");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer jwt-1");
+  });
+
+  it("surfaces the server message when the auth middleware rejects the request", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ success: false, code: "unauthorized", message: "access token expired" }, 401)
+    );
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch).listTokens("stale-token")
+    ).rejects.toMatchObject({ code: "rejected", message: "access token expired" });
+  });
+
   it("maps transport failures to service_unavailable", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new TypeError("fetch failed");
@@ -122,6 +156,22 @@ describe("cuberouter client", () => {
 
     await expect(
       clientWith(fetchImpl as unknown as typeof fetch).login({ username: "alice", password: "Passw0rd1" })
+    ).rejects.toMatchObject({ code: "service_unavailable" });
+  });
+
+  it("maps a failure while reading the response body to service_unavailable", async () => {
+    const fetchImpl = vi.fn(async () =>
+      ({
+        ok: true,
+        status: 200,
+        text: async () => {
+          throw new TypeError("terminated");
+        }
+      }) as unknown as Response
+    );
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch).getSelf("jwt-1")
     ).rejects.toMatchObject({ code: "service_unavailable" });
   });
 });

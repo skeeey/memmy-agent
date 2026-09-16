@@ -59,10 +59,15 @@ export function createHttpCuberouterClient(options: CreateHttpCuberouterClientOp
     },
 
     async listTokens(accessToken) {
-      const page = await request<Record<string, unknown>>(fetchImpl, baseUrl, options.timeoutMs, "/api/token/", {
-        method: "GET",
-        accessToken
-      });
+      // Ask for the server's maximum page size so a caller scanning for an existing
+      // token by name cannot miss it just because the account has more than one page.
+      const page = await request<Record<string, unknown>>(
+        fetchImpl,
+        baseUrl,
+        options.timeoutMs,
+        "/api/token/?p=1&page_size=100",
+        { method: "GET", accessToken }
+      );
       const items = Array.isArray(page.items) ? page.items : [];
       return items.flatMap((item) => {
         const record = asRecord(item);
@@ -124,6 +129,7 @@ async function request<T>(
   input: { method: "GET" | "POST"; body?: Record<string, unknown>; accessToken?: string }
 ): Promise<T> {
   let response: Response;
+  let text: string;
   try {
     response = await fetchImpl(`${baseUrl}${path}`, {
       method: input.method,
@@ -134,11 +140,13 @@ async function request<T>(
       ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
       signal: AbortSignal.timeout(timeoutMs)
     });
+    // Read the body inside the try as well: a timeout or transport failure can also
+    // surface while the body is streaming, and it must carry the same error code.
+    text = await response.text();
   } catch {
     throw cuberouterError("service_unavailable", "无法连接 cuberouter 服务，请检查服务地址与网络");
   }
 
-  const text = await response.text();
   const envelope = parseEnvelope(text);
 
   if (!response.ok || envelope.success !== true) {
