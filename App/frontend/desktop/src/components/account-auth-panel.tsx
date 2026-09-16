@@ -26,10 +26,17 @@ export function AccountAuthPanel() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [continuing, setContinuing] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
+  // An authenticated result whose continuation failed; a retry must re-run only the
+  // continuation, never the register/login call (re-registering would fail outright).
+  const [pendingAuthResult, setPendingAuthResult] = useState<CuberouterAuthResult | null>(null);
 
   async function submit() {
     if (auth.pending || continuing) return;
     setWarning(null);
+    if (pendingAuthResult) {
+      await continueAfterAuth(pendingAuthResult);
+      return;
+    }
     const result = mode === "register"
       ? await auth.register(username, password, confirmPassword)
       : await auth.login(username, password);
@@ -57,7 +64,7 @@ export function AccountAuthPanel() {
 
     try {
       setContinuing(true);
-      await provisionByokModel({
+      const saved = await provisionByokModel({
         configClient: clients.config,
         endpoint: {
           apiBase: result.provisioning.apiBase,
@@ -68,7 +75,6 @@ export function AccountAuthPanel() {
         capabilities: ["agent", "memory_summary", "memory_evolution"],
         assign: ["agent", "memory_summary", "memory_evolution"]
       });
-      const saved = await clients.config.getModelConfig();
       dispatch(appActions.modelConfigUpdated(saved));
 
       // The self-check needs its own guard: it either returns { ok: false } (no quota yet, or
@@ -110,12 +116,14 @@ export function AccountAuthPanel() {
         userMode: "byok",
         onboarding: onboardingPatch
       });
+      setPendingAuthResult(null);
       // The self-test warning never changes routing: new users run onboarding, returning users follow their guide state.
       dispatch(appActions.navigate(
         resolvePostLoginRoute({ onboarding: nextOnboarding, preferredMode: state.navigation.preferredMode })
       ));
     } catch (error) {
       console.error("persist byok mode failed", error);
+      setPendingAuthResult(result);
       auth.setFailure({ text: t("login.error.modePersistenceFailed"), tone: "error" });
     } finally {
       setContinuing(false);
@@ -130,7 +138,7 @@ export function AccountAuthPanel() {
         password={password}
         confirmPassword={mode === "register" ? confirmPassword : undefined}
         disabled={auth.pending || continuing}
-        feedback={warning ? { text: warning, tone: "error" } : auth.feedback}
+        feedback={auth.feedback ?? (warning ? { text: warning, tone: "error" } : null)}
         onUsernameChange={setUsername}
         onPasswordChange={setPassword}
         onConfirmPasswordChange={setConfirmPassword}

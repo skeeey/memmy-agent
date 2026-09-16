@@ -118,7 +118,9 @@ describe("auth flow", () => {
   });
 
   it("模型自检失败只提示告警，仍然继续跳转", async () => {
-    const server = createAuthServer(order, { ok: false, message: "quota exhausted", checkedAt: "2026-09-16T00:00:00.000Z" });
+    const server = createAuthServer(order, {
+      testResult: { ok: false, message: "quota exhausted", checkedAt: "2026-09-16T00:00:00.000Z" }
+    });
     mocks.clients = server.client;
     await renderPanel();
     await fillCredentials();
@@ -127,6 +129,23 @@ describe("auth flow", () => {
     await vi.waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toBe("account.warning.modelUnavailable"));
     expect(mocks.dispatch).toHaveBeenCalledWith(appActions.navigate("/onboarding"));
     expect(server.savedInput()!.modelAssignments.byok.agent.default).not.toBeNull();
+  });
+
+  it("选模式失败后重试只重跑续接，不重新注册", async () => {
+    const server = createAuthServer(order, { failFirstModePersist: true });
+    mocks.clients = server.client;
+    await renderPanel();
+    await fillCredentials();
+    await clickButton("account.register");
+
+    await vi.waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toBe("login.error.modePersistenceFailed"));
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(appActions.navigate("/onboarding"));
+
+    await clickButton("account.register");
+
+    await vi.waitFor(() => expect(mocks.dispatch).toHaveBeenCalledWith(appActions.navigate("/onboarding")));
+    expect(order.filter((entry) => entry === "account.register")).toHaveLength(1);
+    expect(order.filter((entry) => entry === "updateSettings")).toHaveLength(2);
   });
 
   async function renderPanel() {
@@ -197,9 +216,13 @@ function readPageSource(fileName: string): string {
   return readFileSync(resolve(__dirname, "..", fileName), "utf8");
 }
 
-function createAuthServer(order: string[], testResult?: ModelConfigTestResult) {
+function createAuthServer(
+  order: string[],
+  options: { testResult?: ModelConfigTestResult; failFirstModePersist?: boolean } = {}
+) {
   let catalog: ModelConfigView = createModelWorkspace(null).catalog;
   let written: ModelConfigInput | null = null;
+  let modePersistAttempts = 0;
   return {
     client: {
       account: {
@@ -225,10 +248,13 @@ function createAuthServer(order: string[], testResult?: ModelConfigTestResult) {
         }),
         testModelConfig: vi.fn(async () => {
           order.push("testModelConfig");
-          return testResult ?? { ok: true, message: "ok", checkedAt: "2026-09-16T00:00:00.000Z" };
+          return options.testResult ?? { ok: true, message: "ok", checkedAt: "2026-09-16T00:00:00.000Z" };
         }),
         updateSettings: vi.fn(async (settings) => {
           order.push("updateSettings");
+          if (options.failFirstModePersist && modePersistAttempts++ === 0) {
+            throw new Error("settings offline");
+          }
           return settings;
         }),
         updateOnboarding: vi.fn(async (onboarding) => {
