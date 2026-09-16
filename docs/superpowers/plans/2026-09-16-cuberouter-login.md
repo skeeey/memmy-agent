@@ -1700,6 +1700,7 @@ git commit -m "feat(auth): replace verification-code form with cuberouter creden
 - Create: `App/frontend/desktop/src/state/model-provisioning.ts`
 - Create: `App/frontend/desktop/src/components/account-auth-panel.tsx`
 - Modify: `App/frontend/desktop/src/pages/welcome-page.tsx`、`App/frontend/desktop/src/pages/login-page.tsx`
+- Modify: `App/frontend/desktop/src/pages/tests/auth-flow.test.ts`（Task 5 删掉验证码 hook 后这个文件 21 条断言里有 10 条失败——它驱动的是旧流程。按新流程改写：注入 `register`/`login` 桩，断言"提交用户名密码 → 写模型配置 → 选 byok 模式 → 跳转"）
 - Test: `App/frontend/desktop/src/state/tests/model-provisioning.test.ts`
 
 **Interfaces:**
@@ -2043,6 +2044,7 @@ git commit -m "feat(auth): provision the cuberouter model config after register/
 - Modify: `App/frontend/desktop/src/pages/tools-page.tsx`（门控 composio 加载）
 - Modify: `App/frontend/desktop/src/pages/home-page.tsx`、`App/frontend/desktop/src/pages/pet-page.tsx`（门控 ASR 麦克风入口）
 - Modify: `App/frontend/desktop/src/app/invitation-analytics.ts`（`AccountChannel` 扩宽后 `buildInvitationSignupEvent` 的事件参数类型不再匹配：把 `InvitationSignupEventInput.channel` 收窄为 `"email" | "phone"`。邀请事件只属于云/验证码那条路径，cuberouter 注册不报这个事件）
+- Modify: `App/backend/src/services/account-service.ts`（清掉 Task 4 遗留的死代码：`CreateAccountServiceOptions.now` 与函数体里的 `const now = options.now ?? (() => new Date())`——唯一消费者是已删除的 resend 窗口。注意 `tsconfig.base.json` 没开 `noUnusedLocals`、`eslint.config.js` 只配了 `import/no-restricted-paths`，两个 gate 都发现不了这类问题）
 - Delete: `App/frontend/desktop/src/app/account-channel.ts`、`vite.config.ts` 里的 `MEMMY_ACCOUNT_CHANNEL` define、相关测试
 
 **Interfaces:**
