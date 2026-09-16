@@ -1956,6 +1956,7 @@ git commit -m "feat(auth): provision the cuberouter model config after register/
 - Modify: `App/frontend/desktop/src/pages/token-detail-page.tsx`（换成新面板 + 门控）
 - Modify: `App/frontend/desktop/src/pages/tools-page.tsx`（门控 composio 加载）
 - Modify: `App/frontend/desktop/src/pages/home-page.tsx`、`App/frontend/desktop/src/pages/pet-page.tsx`（门控 ASR 麦克风入口）
+- Modify: `App/frontend/desktop/src/app/invitation-analytics.ts`（`AccountChannel` 扩宽后 `buildInvitationSignupEvent` 的事件参数类型不再匹配：把 `InvitationSignupEventInput.channel` 收窄为 `"email" | "phone"`。邀请事件只属于云/验证码那条路径，cuberouter 注册不报这个事件）
 - Delete: `App/frontend/desktop/src/app/account-channel.ts`、`vite.config.ts` 里的 `MEMMY_ACCOUNT_CHANNEL` define、相关测试
 
 **Interfaces:**
