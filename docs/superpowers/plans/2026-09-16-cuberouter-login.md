@@ -17,7 +17,8 @@
 - **改了 `App/backend/local-api-contracts/src/index.ts` 之后，必须先 `npm run build -w @memmy/local-api-contracts`**——backend 与 desktop 都通过该 workspace 包的构建产物引用契约，不重建就看不到新增/变更的类型。
 - 后端单文件测试：`npm --prefix App/backend exec vitest run <path>`（后端 `test` 脚本会先 build 三个 workspace 包；直接跑单文件更快，但改过契约时要先手动 build contracts，见上一条）。
 - **后端全量测试：`cd App/backend && npx vitest run`**。注意 `npm --prefix App/backend exec vitest run`（不带路径）**不会**跑后端套件——它会在 monorepo 根收集、没有 config，产生数百个无关失败（Task 4 实测：BASE 上同样红）。
-- 桌面测试命令：`npm --prefix App/frontend/desktop exec vitest run <path>`。
+- 桌面单文件测试：`npm --prefix App/frontend/desktop exec vitest run <path>`。
+- **桌面全量测试：`cd App/frontend/desktop && npx vitest run`**（同 Ruling 11：`npm --prefix` 不带路径会在 monorepo 根收集、没有 config）。
 - 类型检查：`npm --prefix App/backend run typecheck`、`npm --prefix App/frontend/desktop run typecheck`。
 - 后端测试文件放在源码旁的 `tests/` 子目录（例如 `src/services/tests/`），文件名 `<name>.test.ts`。
 - 代码注释沿用现有英文风格（文件头一行 `/** X module. */`，导出函数用 JSDoc）。
@@ -1955,10 +1956,17 @@ export function AccountAuthPanel() {
       const saved = await clients.config.getModelConfig();
       dispatch(appActions.modelConfigUpdated(saved));
 
-      // 自检失败不阻断：新账号可能没有配额、或模型不在目标实例的能力表里。
-      const test = await clients.config.testModelConfig(saved, "agent");
-      if (!test.ok) {
-        setWarning(t("account.warning.modelUnavailable", { reason: test.message }));
+      // 自检必须单独兜底：它既可能返回 { ok: false }（配额为 0、模型不在能力表里），
+      // 也可能直接抛错（连测请求本身失败）。两种都不能阻断——否则注册成功后用户被卡在认证页，
+      // 账号和模型配置其实都已经建好了（spec D7）。注意 capability 取值是 "chat"，不是 "agent"。
+      try {
+        const test = await clients.config.testModelConfig(saved, "chat");
+        if (!test.ok) {
+          setWarning(t("account.warning.modelUnavailable", { reason: test.message }));
+        }
+      } catch (error) {
+        console.warn("model connection self-check failed", error);
+        setWarning(t("account.warning.modelUnavailable", { reason: t("account.error.requestFailed") }));
       }
     } catch (error) {
       console.error("provision model config failed", error);
