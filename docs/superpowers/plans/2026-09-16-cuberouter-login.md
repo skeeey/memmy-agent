@@ -1382,9 +1382,12 @@ Expected: FAIL — 无法解析 `../use-account-auth.js`
 /** Account authentication module. */
 import type { CuberouterAuthResult } from "@memmy/local-api-contracts";
 import { useCallback, useState } from "react";
+import { ApiRequestError } from "../api/http.js";
 import { useApiClients } from "../app/providers.js";
 import type { MessageKey } from "../i18n/messages.js";
 import { useTranslation } from "../i18n/use-translation.js";
+
+type AuthTranslate = (key: MessageKey, values?: Record<string, string | number>) => string;
 
 export interface AuthFeedback {
   text: string;
@@ -1426,6 +1429,21 @@ const validationMessageKeys: Record<"username" | "password" | "confirm", Message
   password: "account.error.password",
   confirm: "account.error.confirm"
 };
+
+/**
+ * Prefers the server's own business message, and falls back to translated copy for
+ * anything technical: transport failures ("Failed to fetch"), schema errors, and
+ * `internal` envelopes are not user-facing text. Mirrors the classification the
+ * replaced verification-code hook used. The backend maps cuberouter rejections to
+ * `invalid_argument` and transport failures to `internal`, so a wrong password
+ * reaches the user as the server's own sentence while a network error does not.
+ */
+function toFeedbackText(error: unknown, t: AuthTranslate): string {
+  if (error instanceof ApiRequestError && error.code !== null && error.code !== "internal") {
+    return error.message;
+  }
+  return t("account.error.requestFailed");
+}
 
 export interface UseAccountAuthResult {
   pending: boolean;
@@ -1469,10 +1487,7 @@ export function useAccountAuth(): UseAccountAuthResult {
           ? await clients.account.register(credentials)
           : await clients.account.login(credentials);
       } catch (error) {
-        setFeedback({
-          text: error instanceof Error && error.message ? error.message : t("account.error.requestFailed"),
-          tone: "error"
-        });
+        setFeedback({ text: toFeedbackText(error, t), tone: "error" });
         return null;
       } finally {
         setPending(false);
