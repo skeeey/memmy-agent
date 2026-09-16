@@ -1,6 +1,7 @@
 /** Account authentication module. */
 import type { CuberouterAuthResult } from "@memmy/local-api-contracts";
 import { useCallback, useState } from "react";
+import { ApiRequestError } from "../api/http.js";
 import { useApiClients } from "../app/providers.js";
 import type { MessageKey } from "../i18n/messages.js";
 import { useTranslation } from "../i18n/use-translation.js";
@@ -46,6 +47,20 @@ const validationMessageKeys: Record<"username" | "password" | "confirm", Message
   confirm: "account.error.confirm"
 };
 
+type AuthTranslate = (key: MessageKey, values?: Record<string, string | number>) => string;
+
+/**
+ * Prefers the server's own business message, and falls back to translated copy for
+ * anything technical: transport failures ("Failed to fetch"), schema errors, and
+ * `internal` envelopes are not user-facing text.
+ */
+export function toFeedbackText(error: unknown, t: AuthTranslate): string {
+  if (error instanceof ApiRequestError && error.code !== null && error.code !== "internal") {
+    return error.message;
+  }
+  return t("account.error.requestFailed");
+}
+
 export interface UseAccountAuthResult {
   pending: boolean;
   feedback: AuthFeedback | null;
@@ -88,10 +103,7 @@ export function useAccountAuth(): UseAccountAuthResult {
           ? await clients.account.register(credentials)
           : await clients.account.login(credentials);
       } catch (error) {
-        setFeedback({
-          text: error instanceof Error && error.message ? error.message : t("account.error.requestFailed"),
-          tone: "error"
-        });
+        setFeedback({ text: toFeedbackText(error, t), tone: "error" });
         return null;
       } finally {
         setPending(false);

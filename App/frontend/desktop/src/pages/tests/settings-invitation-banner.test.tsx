@@ -41,8 +41,8 @@ describe("SettingsPage invitation banner", () => {
       dailyLimitReached: false
     };
     const accountClient: AccountClient = {
-      sendCode: vi.fn(),
-      verifyCode: vi.fn(),
+      register: vi.fn(),
+      login: vi.fn(),
       getInvitation: vi.fn(async () => invitationResponse),
       updateProfile: vi.fn(),
       markGuideFinished: vi.fn(),
