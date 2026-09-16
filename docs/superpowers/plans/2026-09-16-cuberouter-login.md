@@ -714,7 +714,47 @@ describe("cuberouter account service", () => {
     });
 
     await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
-      code: "rejected"
+      code: "invalid_argument"
+    });
+  });
+
+  it("maps cuberouter failures onto the local API error contract", async () => {
+    const client = fakeClient({
+      login: vi.fn(async () => {
+        throw Object.assign(new Error("用户名或密码不正确"), { code: "rejected" });
+      })
+    });
+    const { repository } = fakeRepository();
+    const service = createCuberouterAccountService({
+      client,
+      accountSessionRepository: repository,
+      baseUrl: "http://127.0.0.1:3000",
+      model: "deepseek-flash"
+    });
+
+    await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
+      code: "invalid_argument",
+      message: "用户名或密码不正确"
+    });
+  });
+
+  it("maps transport failures to internal while keeping the message", async () => {
+    const client = fakeClient({
+      login: vi.fn(async () => {
+        throw Object.assign(new Error("无法连接 cuberouter 服务"), { code: "service_unavailable" });
+      })
+    });
+    const { repository } = fakeRepository();
+    const service = createCuberouterAccountService({
+      client,
+      accountSessionRepository: repository,
+      baseUrl: "http://127.0.0.1:3000",
+      model: "deepseek-flash"
+    });
+
+    await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
+      code: "internal",
+      message: "无法连接 cuberouter 服务"
     });
   });
 
@@ -746,8 +786,29 @@ Expected: FAIL — 无法解析 `../cuberouter-account-service.js`
 ```ts
 /** Cuberouter account service module. */
 import type { CuberouterAuthResult } from "@memmy/local-api-contracts";
-import type { CuberouterClient } from "../adapters/outbound/cuberouter-client/index.js";
+import type { CuberouterClient, CuberouterErrorCode } from "../adapters/outbound/cuberouter-client/index.js";
 import type { AccountSessionRepository } from "../infrastructure/app-state-store/repositories/account-session-repo.js";
+import type { ApiErrorCode } from "./error-envelope.js";
+
+const CUBEROUTER_ERROR_CODES: Record<CuberouterErrorCode, ApiErrorCode> = {
+  two_factor_required: "invalid_argument",
+  rejected: "invalid_argument",
+  service_unavailable: "internal"
+};
+
+/**
+ * Maps a cuberouter adapter failure onto the local API error contract, keeping the
+ * server's own message. Without this every cuberouter rejection surfaces as HTTP 500
+ * "internal" (see `withErrorEnvelope`'s unknown-code fallback), so a wrong password
+ * would be indistinguishable from a crash.
+ */
+function toApiError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  const code = error && typeof error === "object" && "code" in error
+    ? (error as { code?: CuberouterErrorCode }).code
+    : undefined;
+  return Object.assign(new Error(message), { code: code ? CUBEROUTER_ERROR_CODES[code] : "internal" });
+}
 
 /** Fixed token name used as the idempotency key for desktop provisioning. */
 export const MEMORY_DESKTOP_TOKEN_NAME = "memmy-desktop";
@@ -835,12 +896,20 @@ export function createCuberouterAccountService(
 
   return {
     async register(input) {
-      await options.client.register({ username: input.username, password: input.password });
-      return completeLogin(input.username, input.password);
+      try {
+        await options.client.register({ username: input.username, password: input.password });
+        return await completeLogin(input.username, input.password);
+      } catch (error) {
+        throw toApiError(error);
+      }
     },
 
     async login(input) {
-      return completeLogin(input.username, input.password);
+      try {
+        return await completeLogin(input.username, input.password);
+      } catch (error) {
+        throw toApiError(error);
+      }
     },
 
     async logout() {
