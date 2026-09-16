@@ -19,7 +19,6 @@ const remoteLegal: LegalAgreementUrls = {
 
 beforeEach(() => {
   vi.stubEnv("MEMMY_APP_EDITION", "cn");
-  vi.stubEnv("MEMMY_ACCOUNT_CHANNEL", "phone");
   vi.stubEnv("MEMMY_LEGAL_CN_BASE_URL", "https://test.memmy.cn");
   vi.stubEnv("MEMMY_LEGAL_INTL_BASE_URL", "https://test.memmy.bot");
 });
@@ -30,11 +29,10 @@ afterEach(() => {
 
 describe("getLegalLinkUrl", () => {
   it.each([
-    ["cn", "email", "https://test.memmy.cn"],
-    ["intl", "phone", "https://test.memmy.bot"]
-  ] as const)("%s 包使用对应版本的协议域名且不依赖登录通道", (edition, channel, baseUrl) => {
+    ["cn", "https://test.memmy.cn"],
+    ["intl", "https://test.memmy.bot"]
+  ] as const)("%s 包使用对应版本的协议域名", (edition, baseUrl) => {
     vi.stubEnv("MEMMY_APP_EDITION", edition);
-    vi.stubEnv("MEMMY_ACCOUNT_CHANNEL", channel);
 
     for (const kind of kinds) {
       for (const language of languages) {

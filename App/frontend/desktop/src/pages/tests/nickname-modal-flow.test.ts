@@ -6,12 +6,10 @@ import { describe, expect, it } from "vitest";
 const authPanelPath = resolve(__dirname, "../../components/account-auth-panel.tsx");
 const tokenDetailPagePath = resolve(__dirname, "../token-detail-page.tsx");
 
-// The welcome and login pages now delegate registration to the shared AccountAuthPanel,
-// so the post-registration continuation they used to own lives there. token-detail keeps
-// its own copy until the same panel replaces it.
+// The welcome, login and token-detail pages all delegate registration to the shared
+// AccountAuthPanel, so the post-registration continuation they used to own lives there.
 const accountRegistrationEntries = [
-  { path: authPanelPath, continueCall: "await continueAfterAuth(result);" },
-  { path: tokenDetailPagePath, continueCall: "await continueAfterRegistration(onboardingPatch);" }
+  { path: authPanelPath, continueCall: "await continueAfterAuth(result);" }
 ];
 
 const accountEntrySources = [

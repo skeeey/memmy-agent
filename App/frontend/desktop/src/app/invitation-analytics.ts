@@ -1,4 +1,4 @@
-import type { AccountChannel, InvitationResult } from "@memmy/local-api-contracts";
+import type { InvitationResult } from "@memmy/local-api-contracts";
 import type {
   AnalyticsEvent,
   InviteCodeCopiedEvent,
@@ -9,7 +9,8 @@ import type {
 export type TrackAnalyticsEvent = (event: AnalyticsEvent) => void;
 
 export interface InvitationSignupEventInput {
-  channel: AccountChannel;
+  /** The verification-code path is the only signup path that reports this event; cuberouter signups never do. */
+  channel: "email" | "phone";
   isNewUser: boolean;
   invitationCode?: string;
 }

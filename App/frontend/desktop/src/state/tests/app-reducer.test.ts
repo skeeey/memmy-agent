@@ -3,7 +3,7 @@ import { AppBootstrapResponseSchema } from "@memmy/local-api-contracts";
 import { describe, expect, it } from "vitest";
 import { agentActions, appActions } from "../app-actions.js";
 import { agentChatScopeKey } from "../agent-composer-state.js";
-import { appReducer, createInitialAppState } from "../app-reducer.js";
+import { appReducer, canUseCloudFeatures, createInitialAppState } from "../app-reducer.js";
 
 /** Definition for bootstrap. */
 const bootstrap = AppBootstrapResponseSchema.parse({
@@ -282,3 +282,46 @@ describe("app reducer", () => {
     expect(completed.agent.composerDraftsByScope[draftScope]).toBe("帮我整理最近的项目上下文");
   });
 });
+
+describe("account identity provider", () => {
+  it("starts as a memmy cloud identity and records a cuberouter login", () => {
+    const initial = createInitialAppState();
+    expect(initial.account.identityProvider).toBe("memmy_cloud");
+
+    const signedIn = appReducer(initial, appActions.accountUpdated({
+      userId: "cuberouter-user-1",
+      nickname: "alice",
+      identityProvider: "cuberouter"
+    }));
+
+    expect(signedIn.account.identityProvider).toBe("cuberouter");
+    expect(signedIn.account.userId).toBe("cuberouter-user-1");
+  });
+
+  it("keeps the current identity when an update omits it", () => {
+    const cuberouter = appReducer(createInitialAppState(), appActions.accountUpdated({ identityProvider: "cuberouter" }));
+    const renamed = appReducer(cuberouter, appActions.accountUpdated({ nickname: "bob" }));
+
+    expect(renamed.account.nickname).toBe("bob");
+    expect(renamed.account.identityProvider).toBe("cuberouter");
+  });
+
+  it("resets the identity to memmy cloud when the account is cleared", () => {
+    const cuberouter = appReducer(createInitialAppState(), appActions.accountUpdated({ identityProvider: "cuberouter" }));
+    const cleared = appReducer(cuberouter, appActions.accountCleared());
+
+    expect(cleared.account).toEqual(createInitialAppState().account);
+  });
+});
+
+describe("canUseCloudFeatures", () => {
+  it("follows the identity provider so only memmy cloud identities keep the entries", () => {
+    expect(canUseCloudFeatures(createInitialAppState())).toBe(true);
+    expect(canUseCloudFeatures(createStateWithIdentity("memmy_cloud"))).toBe(true);
+    expect(canUseCloudFeatures(createStateWithIdentity("cuberouter"))).toBe(false);
+  });
+});
+
+function createStateWithIdentity(identityProvider: "memmy_cloud" | "cuberouter") {
+  return appReducer(createInitialAppState(), appActions.accountUpdated({ identityProvider }));
+}

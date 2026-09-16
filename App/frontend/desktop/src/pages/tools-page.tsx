@@ -13,6 +13,7 @@ import { Memmy } from "../components/mascot/memmy.js";
 import { CATEGORY_TABS, getAllIntegrationMeta, type IntegrationCategoryTab, type IntegrationMeta } from "../integrations/integration-meta.js";
 import { useTranslation } from "../i18n/use-translation.js";
 import { appActions, loadToolConnectionRecords, toolsActions } from "../state/app-actions.js";
+import { canUseCloudFeatures } from "../state/app-reducer.js";
 import { useAppState } from "../state/app-state.js";
 import { selectConnectionForIntegration, selectStatusPrioritizedIntegrations, selectVisibleIntegrations, type ToolsState } from "../state/tools-slice.js";
 import { AppFrame } from "./app-frame.js";
@@ -37,16 +38,18 @@ export interface ToolsPageViewProps {
 export function ToolsPage() {
   const { state, dispatch } = useAppState();
   const { clients } = useApiClients();
+  const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<IntegrationCategoryTab>("All");
+  const cloudFeaturesEnabled = canUseCloudFeatures(state);
 
   useEffect(() => {
-    if (!clients || !shouldLoadConnectionsForPage(state.tools.status)) {
+    if (!clients || state.account.identityProvider === "cuberouter" || !shouldLoadConnectionsForPage(state.tools.status)) {
       return;
     }
 
     void toolsActions.loadConnections(clients.integrations, clients.channels, dispatch);
-  }, [clients, dispatch, state.tools.status]);
+  }, [clients, dispatch, state.tools.status, state.account.identityProvider]);
 
   useEffect(() => {
     if (!clients || state.tools.status !== "ready") {
@@ -78,6 +81,18 @@ export function ToolsPage() {
 
     void toolsActions.refreshConnections(clients.integrations, clients.channels, dispatch);
   }, [clients, dispatch]);
+
+  if (!cloudFeaturesEnabled) {
+    return (
+      <AppFrame title={t("tools.title")}>
+        <div className="app-frame-page-content h-full overflow-y-auto py-6">
+          <p className="rounded-card border-content-panel bg-background-paper p-4 text-sm text-text-ink/55">
+            {t("tools.cloudUnavailable")}
+          </p>
+        </div>
+      </AppFrame>
+    );
+  }
 
   return (
     <ToolsPageView

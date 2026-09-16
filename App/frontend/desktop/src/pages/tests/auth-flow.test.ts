@@ -190,7 +190,6 @@ describe("auth flow pages", () => {
     expect(source).toContain("<AccountAuthPanel />");
     expect(source).not.toContain("AuthCodeForm");
     expect(source).not.toContain("useVerificationCodeAuth");
-    expect(source).not.toContain("resolveDesktopAccountChannel");
   });
 
   it("面板按 提交 → 供给模型 → 选 byok 模式 → 跳转 的顺序续接", () => {

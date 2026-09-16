@@ -9,7 +9,7 @@ import { Memmy, type MemmyPose } from "../components/mascot/memmy.js";
 import { useTranslation } from "../i18n/use-translation.js";
 import { useTaskBus, type Task, type TaskBusAgentMessage, type TaskBusValue } from "../lib/task-bus.js";
 import { agentActions, appActions } from "../state/app-actions.js";
-import type { AppState } from "../state/app-reducer.js";
+import { canUseCloudFeatures, type AppState } from "../state/app-reducer.js";
 import { useAppState } from "../state/app-state.js";
 import { isComposingKeyboardEvent } from "../utils/keyboard.js";
 import memoIdleUrl from "../assets/mascot/memo-idle-alpha.webm";
@@ -298,7 +298,8 @@ function resolvePetFullRouteAccountSession(input: Pick<AppState, "bootstrap" | "
       planType: null,
       hasFinishedGuide: input.bootstrap.onboarding.completed,
       region: null,
-      registeredAt: input.account.registeredAt
+      registeredAt: input.account.registeredAt,
+      identityProvider: input.account.identityProvider
     }
   };
 }
@@ -984,7 +985,7 @@ export function PetPage() {
     };
   }, [clients?.memmyAgent, recoveryTracker]);
 
-  return <PetPageView bus={bus} mainRoute={resolvePetFullRoute(state)} onNavigate={navigate} onPetWindowChange={setPetWindow} onSubmitTask={submitPetAgentTask} onStopTask={stopPetAgentTask} asrClient={clients?.asr} memmyAgentClient={clients?.memmyAgent} />;
+  return <PetPageView bus={bus} mainRoute={resolvePetFullRoute(state)} onNavigate={navigate} onPetWindowChange={setPetWindow} onSubmitTask={submitPetAgentTask} onStopTask={stopPetAgentTask} asrClient={clients?.asr} memmyAgentClient={clients?.memmyAgent} cloudFeaturesEnabled={canUseCloudFeatures(state)} />;
 }
 
 /**
@@ -1004,6 +1005,8 @@ export interface PetPageViewProps {
   onStopTask?: (task: Task) => boolean;
   asrClient?: AsrClient;
   memmyAgentClient?: MemmyAgentClient;
+  /** Whether the memmy cloud entries (the voice input mic) may be shown. */
+  cloudFeaturesEnabled?: boolean;
 }
 
 /**
@@ -1012,7 +1015,7 @@ export interface PetPageViewProps {
  * @param props The view props.
  * @returns The pet mode node.
  */
-export function PetPageView({ bus, mainRoute = "/main", onNavigate, onPetWindowChange, onSubmitTask, onStopTask, asrClient, memmyAgentClient }: PetPageViewProps) {
+export function PetPageView({ bus, mainRoute = "/main", onNavigate, onPetWindowChange, onSubmitTask, onStopTask, asrClient, memmyAgentClient, cloudFeaturesEnabled = true }: PetPageViewProps) {
   const { t } = useTranslation();
   const agentUnavailableMessage = t("pet.agentUnavailable");
   const asrRecorder = useAsrRecorder(asrClient, { emptyAudioMessage: t("pet.asrEmptyAudio") });
@@ -1972,6 +1975,7 @@ export function PetPageView({ bus, mainRoute = "/main", onNavigate, onPetWindowC
             isPaused={isPaused}
             recordSeconds={recordSeconds}
             textRef={textRef}
+            voiceInputEnabled={cloudFeaturesEnabled}
             labels={{
               placeholder: t("pet.input.placeholder"),
               clickToTalk: t("pet.recording.clickToTalk"),
@@ -2254,6 +2258,7 @@ function AnswerBubble({ registerRef, task, streamedText, labels, onExpand, onDis
  * - onSubmit: Submits the current input.
  * - textRef: The input box ref held by the parent, used for direct-typing discoverability.
  * - labels: The i18n label set.
+ * - voiceInputEnabled: Whether the mic entry is available; hidden for identities without memmy cloud access.
  */
 interface ListeningInputBubbleProps {
   registerRef: RegisterRef;
@@ -2270,6 +2275,7 @@ interface ListeningInputBubbleProps {
   onEndRecord: () => void;
   onSubmit: () => void;
   textRef: RefObject<HTMLInputElement | null>;
+  voiceInputEnabled: boolean;
   labels: {
     placeholder: string;
     clickToTalk: string;
@@ -2289,7 +2295,7 @@ interface ListeningInputBubbleProps {
  * @param props The input bubble props.
  * @returns The input bubble node.
  */
-function ListeningInputBubble({ registerRef, textInput, onTextChange, onFocus, onBlur, isRecording, isSubmittingRecording, isPaused, recordSeconds, onStartRecord, onTogglePause, onEndRecord, onSubmit, textRef, labels }: ListeningInputBubbleProps) {
+function ListeningInputBubble({ registerRef, textInput, onTextChange, onFocus, onBlur, isRecording, isSubmittingRecording, isPaused, recordSeconds, onStartRecord, onTogglePause, onEndRecord, onSubmit, textRef, voiceInputEnabled, labels }: ListeningInputBubbleProps) {
   const canSend = textInput.trim().length > 0;
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     if (!shouldSubmitPetInputOnKeyDown(event, canSend)) {
@@ -2323,9 +2329,11 @@ function ListeningInputBubble({ registerRef, textInput, onTextChange, onFocus, o
         </>
       ) : (
         <>
-          <button type="button" onClick={onStartRecord} className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-text-ink/40 hover:text-action-sky hover:bg-canvas-oat/50 transition-colors cursor-pointer" title={labels.clickToTalk}>
-            <Mic size={13} />
-          </button>
+          {voiceInputEnabled && (
+            <button type="button" onClick={onStartRecord} className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-text-ink/40 hover:text-action-sky hover:bg-canvas-oat/50 transition-colors cursor-pointer" title={labels.clickToTalk}>
+              <Mic size={13} />
+            </button>
+          )}
           <button type="button" onClick={() => canSend && onSubmit()} disabled={!canSend} className="shrink-0 w-7 h-7 bg-action-sky text-white rounded-full flex items-center justify-center cursor-pointer hover:bg-action-sky-hover transition-colors disabled:opacity-35 disabled:cursor-not-allowed shadow-sm" title={labels.send}>
             <Send size={12} />
           </button>

@@ -43,6 +43,8 @@ export interface AccountState {
   phoneNumber: string | null;
   nickname: string;
   registeredAt: string | null;
+  /** Which backend issued the active session; cuberouter sessions have no memmy cloud account behind them. */
+  identityProvider: "memmy_cloud" | "cuberouter";
 }
 
 /** Contract for modal state. */
@@ -135,7 +137,8 @@ export function createInitialAppState(): AppState {
       email: "",
       phoneNumber: null,
       nickname: "",
-      registeredAt: null
+      registeredAt: null,
+      identityProvider: "memmy_cloud"
     },
     modelConfig: defaultModelConfig,
     agent: initialAgentState,
@@ -341,7 +344,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           email: action.email ?? state.account.email,
           phoneNumber: Object.prototype.hasOwnProperty.call(action, "phoneNumber") ? (action.phoneNumber ?? null) : state.account.phoneNumber,
           nickname: action.nickname ?? state.account.nickname,
-          registeredAt: Object.prototype.hasOwnProperty.call(action, "registeredAt") ? (action.registeredAt ?? null) : state.account.registeredAt
+          registeredAt: Object.prototype.hasOwnProperty.call(action, "registeredAt") ? (action.registeredAt ?? null) : state.account.registeredAt,
+          identityProvider: action.identityProvider ?? state.account.identityProvider
         }
       };
     case "account/cleared":
@@ -352,7 +356,8 @@ export function appReducer(state: AppState, action: AppAction): AppState {
           email: "",
           phoneNumber: null,
           nickname: "",
-          registeredAt: null
+          registeredAt: null,
+          identityProvider: "memmy_cloud"
         }
       };
     case "modelConfig/updated":
@@ -377,6 +382,11 @@ export function appReducer(state: AppState, action: AppAction): AppState {
         tools: toolsReducer(state.tools, action as ToolsAction)
       };
   }
+}
+
+/** True when the active identity still has a memmy cloud account behind it. */
+export function canUseCloudFeatures(state: Pick<AppState, "account">): boolean {
+  return state.account.identityProvider !== "cuberouter";
 }
 
 function isAgentChatViewPath(path: AppRoutePath): boolean {

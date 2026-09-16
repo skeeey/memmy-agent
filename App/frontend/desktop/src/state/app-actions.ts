@@ -100,7 +100,15 @@ export type AppAction =
   | { type: "agentSources/scanCompletionExpired"; jobId: string }
   | { type: "scanPreferences/updated"; preferences: Partial<ScanPreferences> }
   | { type: "preferredMode/updated"; preferredMode: PreferredMode }
-  | { type: "account/updated"; userId?: string; email?: string; phoneNumber?: string | null; nickname?: string; registeredAt?: string | null }
+  | {
+      type: "account/updated";
+      userId?: string;
+      email?: string;
+      phoneNumber?: string | null;
+      nickname?: string;
+      registeredAt?: string | null;
+      identityProvider?: "memmy_cloud" | "cuberouter";
+    }
   | { type: "account/cleared" }
   | { type: "modelConfig/updated"; config: Partial<ModelProviderConfig> }
   | { type: "modal/changed"; modal: "nickname" | "scanPermission" | "improvement" | "modelConfig" | "manualSource"; open: boolean };
@@ -210,7 +218,14 @@ export const appActions = {
   },
 
   /** Handles account updated. */
-  accountUpdated(input: { userId?: string; email?: string; phoneNumber?: string | null; nickname?: string; registeredAt?: string | null }): AppAction {
+  accountUpdated(input: {
+    userId?: string;
+    email?: string;
+    phoneNumber?: string | null;
+    nickname?: string;
+    registeredAt?: string | null;
+    identityProvider?: "memmy_cloud" | "cuberouter";
+  }): AppAction {
     return { type: "account/updated", ...input };
   },
 

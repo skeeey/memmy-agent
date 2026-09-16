@@ -41,9 +41,10 @@ function readSource(path: string): string {
 }
 
 describe("WelcomePage 赠送活动开关", () => {
-  it("登录页赠送黄条由 promotions.loginBanner 和 Agent 任务额度共同控制", () => {
+  it("登录页赠送黄条由云身份、promotions.loginBanner 和 Agent 任务额度共同控制", () => {
     const pageSource = readSource(pageSourcePath);
 
+    expect(pageSource).toContain("canUseCloudFeatures(state)");
     expect(pageSource).toContain("state.bootstrap?.promotions?.loginBanner ?? true");
     expect(pageSource).toContain("(agentChatTokenTotal ?? 0) > 0");
     const gateIndex = pageSource.indexOf("promotions?.loginBanner ?? true");

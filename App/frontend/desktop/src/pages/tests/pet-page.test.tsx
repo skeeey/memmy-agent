@@ -852,6 +852,15 @@ describe("PetPageView SSR", () => {
     expect(source).not.toContain("const transcript = textInput.trim();");
   });
 
+  it("云身份不可用时只隐藏麦克风入口，输入框与发送保持可用", () => {
+    const source = readFileSync(petPageSourcePath, "utf8");
+
+    expect(source).toContain("{voiceInputEnabled && (");
+    expect(source).toContain("voiceInputEnabled={cloudFeaturesEnabled}");
+    expect(source).toContain("cloudFeaturesEnabled={canUseCloudFeatures(state)}");
+    expect(source).toContain("<input ref={textRef} type=\"text\"");
+  });
+
   it("挂载时只清除已完成 focusedTask 的焦点，避免残留气泡同时保留任务列表记录", () => {
     const source = readFileSync(petPageSourcePath, "utf8");
 

@@ -405,7 +405,7 @@ describe("SettingsPageView", () => {
     expect(browserSource).toContain("manifest.code !== 0");
     expect(browserSource).toContain('readUpdateManifestRecord(manifest, "data") ?? {}');
     expect(browserSource).toContain('url.searchParams.set("platformType", resolveBrowserUpdatePlatformType())');
-    expect(browserSource).toContain('resolveDesktopAccountChannel() === "email" ? "intl" : "cn"');
+    expect(browserSource).toContain('import.meta.env.MEMMY_APP_EDITION === "intl" ? "intl" : "cn"');
     expect(browserSource).toContain('import.meta.env.MEMMY_PACKAGE_SIGNING === "unsigned" ? "unsigned" : "signed"');
     expect(browserSource).toContain('const UPDATE_MANIFEST_PATH = "/api/memmy/desktop/latest"');
     expect(browserSource).not.toContain("VITE_MEMMY_UPDATE_MANIFEST_URL");

@@ -37,14 +37,10 @@ export interface CreateAccountServiceOptions {
   memmyConfigWriter?: MemmyConfigWriter;
   /** Memory client. */
   memoryClient?: Pick<MemoryClient, "reloadConfig">;
-  /** Now. */
-  now?: () => Date;
 }
 
 /** Creates create account service. */
 export function createAccountService(options: CreateAccountServiceOptions): AccountService {
-  const now = options.now ?? (() => new Date());
-
   // A cuberouter session stores the cuberouter JWT as its cloud credential, so every
   // memmy-cloud call that would send it as a bearer has to be skipped: the cloud answers
   // 401, and the guide refresh then wipes the session on each restart.

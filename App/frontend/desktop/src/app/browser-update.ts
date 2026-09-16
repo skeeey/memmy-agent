@@ -1,6 +1,5 @@
 /** Browser update fallback module. */
 import type { DesktopUpdateCheckResult } from "@memmy/desktop-interface";
-import { resolveDesktopAccountChannel } from "./account-channel.js";
 
 const UPDATE_MANIFEST_PATH = "/api/memmy/desktop/latest";
 
@@ -103,8 +102,9 @@ export function compareUpdateVersions(left: string, right: string): number {
   return 0;
 }
 
+/** Matches legal-links: MEMMY_APP_EDITION=intl → intl, otherwise cn. */
 function resolveBrowserUpdateEdition(): "cn" | "intl" {
-  return resolveDesktopAccountChannel() === "email" ? "intl" : "cn";
+  return import.meta.env.MEMMY_APP_EDITION === "intl" ? "intl" : "cn";
 }
 
 function resolveBrowserUpdateSigning(): "signed" | "unsigned" {

@@ -10,6 +10,7 @@ import { LanguageToggleButton } from "../components/language-toggle-button.js";
 import { Memmy } from "../components/mascot/memmy.js";
 import { useTranslation } from "../i18n/use-translation.js";
 import { appActions } from "../state/app-actions.js";
+import { canUseCloudFeatures } from "../state/app-reducer.js";
 import { useAppState } from "../state/app-state.js";
 import { formatTokenGiftAmount } from "./token-gift.js";
 
@@ -23,7 +24,9 @@ export function WelcomePage() {
   const [modePersistenceFeedback, setModePersistenceFeedback] = useState<{ text: string; tone: "error" | "success" } | null>(null);
   const agentChatTokenTotal = state.bootstrap?.promotions?.agentChatTokenTotal;
   const showLoginBanner =
-    (state.bootstrap?.promotions?.loginBanner ?? true) && (agentChatTokenTotal ?? 0) > 0;
+    canUseCloudFeatures(state) &&
+    (state.bootstrap?.promotions?.loginBanner ?? true) &&
+    (agentChatTokenTotal ?? 0) > 0;
 
   /** Handles toggle language. */
   function toggleLanguage() {

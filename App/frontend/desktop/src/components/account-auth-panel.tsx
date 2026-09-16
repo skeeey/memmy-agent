@@ -54,7 +54,8 @@ export function AccountAuthPanel() {
       email: session.profile.email ?? "",
       phoneNumber: session.profile.phoneNumber,
       nickname: session.profile.nickname,
-      registeredAt: session.profile.registeredAt
+      registeredAt: session.profile.registeredAt,
+      identityProvider: session.profile.identityProvider
     }));
 
     if (!clients?.config) {
