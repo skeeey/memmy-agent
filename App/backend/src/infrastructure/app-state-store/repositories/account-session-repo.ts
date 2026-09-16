@@ -1,6 +1,7 @@
 /** Account session repo module. */
 import { createHash } from "node:crypto";
 import {
+  AccountChannelSchema,
   AccountProfileViewSchema,
   AccountSessionViewSchema,
   type AccountChannel,
@@ -209,7 +210,8 @@ export function createAccountSessionRepository(db: DatabaseSync, secretStore: Se
           planType: input.profile.planType,
           hasFinishedGuide: input.profile.hasFinishedGuide,
           region: input.profile.region,
-          registeredAt
+          registeredAt,
+          identityProvider: input.profile.identityProvider
         })
       });
     },
@@ -384,7 +386,8 @@ function resolveAccountAuthChannel(row: AccountSessionRow | null): AccountChanne
 function resolveExplicitAccountAuthChannel(row: AccountSessionRow | null): AccountChannel | null {
   if (!row?.raw_profile_json) return null;
   const value = parseRawProfile(row.raw_profile_json)?.[LOCAL_AUTH_CHANNEL_FIELD];
-  return value === "email" || value === "phone" ? value : null;
+  const parsed = AccountChannelSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
 /**
@@ -443,7 +446,8 @@ function toProfileView(row: AccountSessionRow): AccountProfileView {
     planType: row.plan_type,
     hasFinishedGuide: row.has_finished_guide === null ? null : row.has_finished_guide === 1,
     region: row.region,
-    registeredAt: row.registered_at
+    registeredAt: row.registered_at,
+    identityProvider: resolveAccountAuthChannel(row) === "cuberouter" ? "cuberouter" : "memmy_cloud"
   });
 }
 

@@ -367,6 +367,35 @@ describe("account session repository", () => {
     store.close();
   });
 
+  it("round-trips a cuberouter identity and channel", () => {
+    tempDir = mkdtempSync(join(tmpdir(), "memmy-account-session-"));
+    const store = createAppStateStore({ databasePath: join(tempDir, "app.sqlite") });
+
+    store.repositories.accountSession.upsert({
+      uuid: "cuberouter:7",
+      cloudUuid: "jwt-1",
+      authChannel: "cuberouter",
+      profile: {
+        userId: "7",
+        email: null,
+        phoneNumber: null,
+        nickname: "Alice",
+        avatarUrl: null,
+        planType: null,
+        hasFinishedGuide: null,
+        region: null,
+        registeredAt: null,
+        identityProvider: "cuberouter",
+        rawProfile: {}
+      }
+    });
+
+    expect(store.repositories.accountSession.getAuthChannel()).toBe("cuberouter");
+    expect(store.repositories.accountSession.get().profile.identityProvider).toBe("cuberouter");
+    expect(store.repositories.accountSession.getCloudUuid()).toBe("jwt-1");
+    store.close();
+  });
+
   it("repairs missing phone column from raw cloud profile", () => {
     tempDir = mkdtempSync(join(tmpdir(), "memmy-account-session-"));
     const store = createAppStateStore({ databasePath: join(tempDir, "app.sqlite") });
