@@ -12,6 +12,8 @@ import {
 } from "../product-tour-layout.js";
 
 import { resolveMainWindowActionRoute, resolveProductTourPath } from "../router.js";
+import { appActions } from "../../state/app-actions.js";
+import { appReducer, canUseCloudFeatures, createInitialAppState } from "../../state/app-reducer.js";
 import {
   createProductTourSteps,
   productTourIncludesLogs,
@@ -90,8 +92,13 @@ describe("ProductTourGuide", () => {
     const source = readFileSync(new URL("../product-tour.tsx", import.meta.url), "utf8");
 
     expect(source).toContain("const steps = useMemo(");
-    expect(source).toContain("createProductTourSteps(t, { includeLogs })");
+    expect(source).toContain("createProductTourSteps(t, { includeLogs, includeTools })");
     expect(source).not.toContain("const steps = createProductTourSteps(t) as [ProductTourStep, ...ProductTourStep[]];");
+  });
+
+  it("cuberouter 身份去掉工具步，云账号身份保留", () => {
+    expect(productTourStepTabsForIdentity("cuberouter")).toEqual(["logs", "agents", "agentsScan", "overview"]);
+    expect(productTourStepTabsForIdentity("memmy_cloud")).toEqual(["logs", "agents", "agentsScan", "overview", "tools"]);
   });
 
   it("拒绝授权末步 CTA 用开始使用，扫描用户用进入首次对话", () => {
@@ -139,3 +146,11 @@ describe("ProductTourGuide", () => {
     expect(source).not.toContain('scrollIntoView({ block: "center"');
   });
 });
+
+/** Step list the router hands the guide for an identity, mirroring <ProductTourGuide includeTools>. */
+function productTourStepTabsForIdentity(identityProvider: "memmy_cloud" | "cuberouter"): ProductTourTab[] {
+  const state = appReducer(createInitialAppState(), appActions.accountUpdated({ identityProvider }));
+
+  return createProductTourSteps((key) => zhCNMessages[key], { includeTools: canUseCloudFeatures(state) })
+    .map((step) => step.tab);
+}

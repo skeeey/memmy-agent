@@ -79,6 +79,12 @@ export interface ProductTourStep {
 export interface CreateProductTourStepsOptions {
   /** When false, skip the memory-logs step (deny-scan / 4-step tour). Defaults to true. */
   includeLogs?: boolean;
+  /**
+   * When false, skip the tools step. The tools page is a memmy cloud entry, so an
+   * identity without a cloud account behind it has no anchor for that step to land
+   * on. Defaults to true.
+   */
+  includeTools?: boolean;
 }
 
 /** Scan permission that earned a first-encounter report → keep the logs tour step. */
@@ -104,6 +110,7 @@ export function createProductTourSteps(
   options: CreateProductTourStepsOptions = {}
 ): ProductTourStep[] {
   const includeLogs = options.includeLogs ?? true;
+  const includeTools = options.includeTools ?? true;
   const steps: ProductTourStep[] = [
     {
       tab: "logs",
@@ -218,7 +225,9 @@ export function createProductTourSteps(
       ]
     }
   ];
-  return includeLogs ? steps : steps.filter((step) => step.tab !== "logs");
+  return steps.filter(
+    (step) => (includeLogs || step.tab !== "logs") && (includeTools || step.tab !== "tools")
+  );
 }
 
 export type ProductTourDismissResult = "completed" | "skipped";
@@ -237,15 +246,17 @@ export interface ProductTourGuideProps {
   onStepViewed?: (info: ProductTourStepInfo) => void;
   /** Deny-scan tours omit the logs step (4/4). Defaults to true (5/5). */
   includeLogs?: boolean;
+  /** Identities without a memmy cloud account omit the tools step. Defaults to true. */
+  includeTools?: boolean;
 }
 
 /** Handles product tour guide. */
 export function ProductTourGuide(props: ProductTourGuideProps) {
-  const { onDismiss, onTabChange, onStepViewed, includeLogs = true } = props;
+  const { onDismiss, onTabChange, onStepViewed, includeLogs = true, includeTools = true } = props;
   const { t } = useTranslation();
   const steps = useMemo(
-    () => createProductTourSteps(t, { includeLogs }) as [ProductTourStep, ...ProductTourStep[]],
-    [includeLogs, t]
+    () => createProductTourSteps(t, { includeLogs, includeTools }) as [ProductTourStep, ...ProductTourStep[]],
+    [includeLogs, includeTools, t]
   );
   const [step, setStep] = useState(() =>
     readProductTourStep(typeof window === "undefined" ? undefined : window.sessionStorage) ?? 0

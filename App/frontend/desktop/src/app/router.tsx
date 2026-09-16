@@ -36,6 +36,7 @@ import {
 } from "./routes.js";
 import { persistNickname } from "./nickname.js";
 import { useOptionalApiClients } from "./providers.js";
+import { canUseCloudFeatures } from "../state/app-reducer.js";
 import { useAppState } from "../state/app-state.js";
 import { useAnalytics } from "../analytics/use-analytics.js";
 import {
@@ -235,6 +236,7 @@ export function AppRouter(props: { onRetry: () => void }) {
       {workspaceGuidanceStep === "product_tour" && (
         <ProductTourGuide
           includeLogs={productTourIncludesLogs(state.bootstrap?.onboarding.scanPermission)}
+          includeTools={canUseCloudFeatures(state)}
           onDismiss={dismissProductTour}
           onStepViewed={(info) => {
             const tourEvent = buildProductTourStepEvent({

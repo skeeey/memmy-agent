@@ -1,4 +1,5 @@
 /** Cloud feature gate tests. */
+import { readFileSync } from "node:fs";
 import { renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentRuntimeBridge } from "../../app/agent-runtime-bridge.js";
@@ -51,6 +52,12 @@ describe("cloud feature gate", () => {
 
     expect(cloudHtml).toContain("语音输入");
     expect(cloudHtml).toContain('data-icon="mic"');
+  });
+
+  it("drops the product tour's tools step for a cuberouter identity so the tour can still be dismissed", () => {
+    const routerSource = readFileSync(new URL("../../app/router.tsx", import.meta.url), "utf8");
+
+    expect(routerSource).toContain("includeTools={canUseCloudFeatures(state)}");
   });
 });
 
