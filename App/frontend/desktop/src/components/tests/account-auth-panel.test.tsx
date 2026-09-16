@@ -1,12 +1,16 @@
 // @vitest-environment happy-dom
 
 /** Account auth panel tests. */
+import type { CuberouterAuthResult } from "@memmy/local-api-contracts";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppClients } from "../../api/client-types.js";
+import type { ModelProviderConfig } from "../../api/config-client.js";
 import { ApiRequestError } from "../../api/http.js";
+import { appActions } from "../../state/app-actions.js";
 import { createInitialAppState, type AppState } from "../../state/app-reducer.js";
+import { createModelWorkspace } from "../../state/model-workspace.js";
 import { AccountAuthPanel } from "../account-auth-panel.js";
 
 const mocks = vi.hoisted(() => ({
@@ -36,6 +40,7 @@ describe("AccountAuthPanel auth error copy", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     mocks.state = createInitialAppState();
     container = document.createElement("div");
     document.body.append(container);
@@ -72,6 +77,35 @@ describe("AccountAuthPanel auth error copy", () => {
     await submitFailingLogin(new ApiRequestError("", 400, "invalid_argument"));
 
     expect(alertText()).toBe("account.error.requestFailed");
+  });
+
+  it("keeps the registered user moving when the model self-check itself throws", async () => {
+    const updateSettings = vi.fn(async (settings) => settings);
+    const saveModelCatalog = vi.fn(async () => emptyProviderConfig());
+    mocks.clients = {
+      account: { register: vi.fn(async () => authResult()) },
+      config: {
+        getModelConfig: vi.fn(async () => emptyProviderConfig()),
+        saveModelCatalog,
+        testModelConfig: vi.fn(async () => {
+          throw new Error("Failed to fetch");
+        }),
+        updateSettings,
+        updateOnboarding: vi.fn(async (onboarding) => onboarding)
+      }
+    } as unknown as AppClients;
+
+    await act(async () => root.render(<AccountAuthPanel />));
+    await fillInput(0, "alice");
+    await fillInput(1, "Passw0rd1");
+    await fillInput(2, "Passw0rd1");
+    await clickButton("account.register");
+
+    await vi.waitFor(() => expect(alertText()).toBe("account.warning.modelUnavailable"));
+    // The account and the catalog write both succeeded, so the self-check must not strand the user.
+    expect(saveModelCatalog).toHaveBeenCalledTimes(1);
+    expect(updateSettings).toHaveBeenCalledWith({ userMode: "byok" });
+    expect(mocks.dispatch).toHaveBeenCalledWith(appActions.navigate("/onboarding"));
   });
 
   async function submitFailingLogin(error: unknown) {
@@ -114,3 +148,38 @@ describe("AccountAuthPanel auth error copy", () => {
     await act(async () => target.click());
   }
 });
+
+function emptyProviderConfig(): ModelProviderConfig {
+  const catalog = createModelWorkspace(null).catalog;
+  return {
+    catalog,
+    configRevision: catalog.configRevision,
+    provider: "openai",
+    endpoint: "",
+    model: "",
+    apiKey: "",
+    apiKeyMasked: "",
+    configured: false
+  };
+}
+
+function authResult(): CuberouterAuthResult {
+  return {
+    session: {
+      authenticated: true,
+      profile: {
+        userId: "cuberouter-user-1",
+        email: "alice@example.com",
+        phoneNumber: null,
+        nickname: "alice",
+        registeredAt: "2026-09-16T00:00:00.000Z",
+        hasFinishedGuide: false
+      }
+    },
+    provisioning: {
+      apiKey: "sk-cuberouter",
+      apiBase: "http://127.0.0.1:3100/v1",
+      model: "deepseek-flash"
+    }
+  } as unknown as CuberouterAuthResult;
+}

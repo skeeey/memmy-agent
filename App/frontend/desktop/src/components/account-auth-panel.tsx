@@ -71,11 +71,18 @@ export function AccountAuthPanel() {
       const saved = await clients.config.getModelConfig();
       dispatch(appActions.modelConfigUpdated(saved));
 
-      // A failed self-test must not block: a new account may have no quota yet, or
-      // the model may be missing from the target instance's capability table.
-      const test = await clients.config.testModelConfig(saved, "chat");
-      if (!test.ok) {
-        setWarning(t("account.warning.modelUnavailable", { reason: test.message }));
+      // The self-check needs its own guard: it either returns { ok: false } (no quota yet, or
+      // the model is missing from the target instance's capability table) or throws outright
+      // (the probe request itself failed). Neither may block: the account and the model config
+      // are already written, so bailing out here would strand the user on the auth page.
+      try {
+        const test = await clients.config.testModelConfig(saved, "chat");
+        if (!test.ok) {
+          setWarning(t("account.warning.modelUnavailable", { reason: test.message }));
+        }
+      } catch (error) {
+        console.warn("model connection self-check failed", error);
+        setWarning(t("account.warning.modelUnavailable", { reason: t("account.error.requestFailed") }));
       }
     } catch (error) {
       console.error("provision model config failed", error);
