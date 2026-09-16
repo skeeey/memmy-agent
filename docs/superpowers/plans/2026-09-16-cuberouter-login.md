@@ -2157,6 +2157,8 @@ export function canUseCloudFeatures(state: Pick<AppState, "account">): boolean {
 
 并把工具页入口/内容用 `canUseCloudFeatures(state)` 包一层（不可用时显示一个说明面板，文案 `t("tools.cloudUnavailable")`；该 key 一并加进 messages.ts 的 zh/en）。
 
+**同时必须把产品导览的"工具页"那一步在同一个条件下过滤掉**：该步骤的高亮与气泡都锚在 `ToolsPageView` 内的 `data-tour-anchor={PRODUCT_TOUR_TOOLS_CONTENT_ANCHOR}` 上，面板提前 return 会让锚点消失，`resolveProductTourStepLayout` 于是返回 null、整个步骤渲染为空——连 Next/Skip 都在那个气泡里，**导览会永久卡在最后一步且每次会话重新武装**。照 `product-tour.tsx` 里既有的 `includeLogs` 过滤写法加一个"云能力不可用时不包含工具步骤"的条件。
+
 `home-page.tsx` 与 `pet-page.tsx`：把麦克风按钮的渲染条件加上 `canUseCloudFeatures(state)`（`startVoiceInput`/`finishVoiceInput` 与 `useAsrRecorder` 的调用点保持不动，只门控 UI 入口）。
 
 - [ ] **Step 4: token-detail 页换成新面板并门控**
