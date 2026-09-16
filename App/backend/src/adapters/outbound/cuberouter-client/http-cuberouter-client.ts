@@ -59,22 +59,29 @@ export function createHttpCuberouterClient(options: CreateHttpCuberouterClientOp
     },
 
     async listTokens(accessToken) {
-      // Ask for the server's maximum page size so a caller scanning for an existing
-      // token by name cannot miss it just because the account has more than one page.
-      const page = await request<Record<string, unknown>>(
-        fetchImpl,
-        baseUrl,
-        options.timeoutMs,
-        "/api/token/?p=1&page_size=100",
-        { method: "GET", accessToken }
-      );
-      const items = Array.isArray(page.items) ? page.items : [];
-      return items.flatMap((item) => {
-        const record = asRecord(item);
-        const id = typeof record.id === "number" ? record.id : Number.parseInt(String(record.id ?? ""), 10);
-        const name = readString(record.name);
-        return Number.isFinite(id) && name ? [{ id, name }] : [];
-      });
+      const requestedPageSize = 100;
+      const tokens: CuberouterTokenSummary[] = [];
+      // Read every page, not just the first: a caller scanning for an existing token by name
+      // would otherwise miss one that sits on a later page, creating a duplicate on every
+      // login until the per-user token cap turns that into a permanent login failure.
+      for (let page = 1; ; page += 1) {
+        const response = await request<Record<string, unknown>>(
+          fetchImpl,
+          baseUrl,
+          options.timeoutMs,
+          `/api/token/?p=${page}&page_size=${requestedPageSize}`,
+          { method: "GET", accessToken }
+        );
+        const items = Array.isArray(response.items) ? response.items : [];
+        tokens.push(...toTokenSummaries(items));
+
+        const total = readCount(response.total);
+        // Trust the page size the server reports over the one requested: it may cap it.
+        const pageSize = readPositiveCount(response.page_size) ?? requestedPageSize;
+        if (items.length === 0 || total === null || page * pageSize >= total) {
+          return tokens;
+        }
+      }
     },
 
     async createToken(accessToken, input) {
@@ -167,6 +174,28 @@ function parseEnvelope(text: string): CuberouterEnvelope {
 
 function cuberouterError(code: CuberouterErrorCode, message: string): Error {
   return Object.assign(new Error(message), { code });
+}
+
+/** Maps one token page onto the id/name summary, dropping rows without a usable id or name. */
+function toTokenSummaries(items: unknown[]): CuberouterTokenSummary[] {
+  return items.flatMap((item) => {
+    const record = asRecord(item);
+    const id = typeof record.id === "number" ? record.id : Number.parseInt(String(record.id ?? ""), 10);
+    const name = readString(record.name);
+    return Number.isFinite(id) && name ? [{ id, name }] : [];
+  });
+}
+
+/** Reads a non-negative integer count (a page total); returns null when the field is unusable. */
+function readCount(value: unknown): number | null {
+  const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/** Reads a positive integer count (a page size); returns null so a reported 0 cannot stall paging. */
+function readPositiveCount(value: unknown): number | null {
+  const parsed = readCount(value);
+  return parsed === null || parsed < 1 ? null : parsed;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

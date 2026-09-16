@@ -86,6 +86,59 @@ describe("cuberouter client", () => {
     expect(init.method).toBe("GET");
   });
 
+  it("reads every token page so a later page cannot hide an existing token", async () => {
+    // The reuse branch scans this list by name: a token that only shows up on page 2 would
+    // otherwise be invisible, and each login would create a duplicate token.
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({ id: index + 1, name: `token-${index + 1}` }));
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const page = Number(new URL(String(url)).searchParams.get("p"));
+      return jsonResponse({
+        success: true,
+        message: "",
+        data: {
+          page,
+          page_size: 100,
+          total: 101,
+          items: page === 1 ? firstPage : [{ id: 101, name: "memmy-desktop" }]
+        }
+      });
+    });
+
+    const tokens = await clientWith(fetchImpl as unknown as typeof fetch).listTokens("jwt-1");
+
+    expect(tokens).toHaveLength(101);
+    expect(tokens).toContainEqual({ id: 101, name: "memmy-desktop" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(String((fetchImpl.mock.calls[1] as [string])[0])).toBe("http://127.0.0.1:3000/api/token/?p=2&page_size=100");
+  });
+
+  it("honours the page size the server reports instead of the one requested", async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const page = Number(new URL(String(url)).searchParams.get("p"));
+      return jsonResponse({
+        success: true,
+        message: "",
+        data: {
+          page,
+          page_size: 2,
+          total: 3,
+          items: page === 1
+            ? [{ id: 1, name: "one" }, { id: 2, name: "two" }]
+            : [{ id: 3, name: "memmy-desktop" }]
+        }
+      });
+    });
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch).listTokens("jwt-1")
+    ).resolves.toEqual([
+      { id: 1, name: "one" },
+      { id: 2, name: "two" },
+      { id: 3, name: "memmy-desktop" }
+    ]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it("creates a never-expiring unlimited token", async () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) =>
       jsonResponse({ success: true, message: "" })
