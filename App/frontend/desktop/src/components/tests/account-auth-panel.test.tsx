@@ -8,8 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppClients } from "../../api/client-types.js";
 import type { ModelProviderConfig } from "../../api/config-client.js";
 import { ApiRequestError } from "../../api/http.js";
+import { mockBootstrap } from "../../pages/tests/fixtures/bootstrap.js";
 import { appActions } from "../../state/app-actions.js";
-import { createInitialAppState, type AppState } from "../../state/app-reducer.js";
+import { appReducer, createInitialAppState, type AppState } from "../../state/app-reducer.js";
 import { createModelWorkspace } from "../../state/model-workspace.js";
 import { AccountAuthPanel } from "../account-auth-panel.js";
 
@@ -84,6 +85,32 @@ describe("AccountAuthPanel auth error copy", () => {
     await submitFailingLogin(new ApiRequestError(message, 503, "cuberouter_unavailable"));
 
     expect(alertText()).toBe(message);
+  });
+
+  it("keeps a returning user's completed onboarding and routes to /main", async () => {
+    mocks.state = createCompletedOnboardingState();
+    const updateOnboarding = vi.fn(async (onboarding: unknown) => onboarding);
+    mocks.clients = {
+      account: { login: vi.fn(async () => authResult({ isNewUser: false })) },
+      config: {
+        getModelConfig: vi.fn(async () => emptyProviderConfig()),
+        saveModelCatalog: vi.fn(async () => emptyProviderConfig()),
+        testModelConfig: vi.fn(async () => ({ ok: true, message: "ok", checkedAt: "2026-09-16T00:00:00.000Z" })),
+        updateSettings: vi.fn(async (settings: unknown) => settings),
+        updateOnboarding
+      }
+    } as unknown as AppClients;
+
+    await act(async () => root.render(<AccountAuthPanel />));
+    await clickButton("account.switchToLogin");
+    await fillInput(0, "alice");
+    await fillInput(1, "Passw0rd1");
+    await clickButton("account.login");
+
+    await vi.waitFor(() => expect(mocks.dispatch).toHaveBeenCalledWith(appActions.navigate("/main")));
+    // The persisted patch must not carry the new-user onboarding reset: doing so would
+    // survive restarts and send the returning user through onboarding again.
+    expect(updateOnboarding).toHaveBeenCalledWith({});
   });
 
   it("keeps the registered user moving when the model self-check itself throws", async () => {
@@ -170,17 +197,38 @@ function emptyProviderConfig(): ModelProviderConfig {
   };
 }
 
-function authResult(): CuberouterAuthResult {
+/**
+ * Builds a local state where onboarding was already completed on this machine.
+ *
+ * @returns An app state with a completed local onboarding.
+ */
+function createCompletedOnboardingState(): AppState {
+  const bootstrap = {
+    ...mockBootstrap,
+    app: { ...mockBootstrap.app, userMode: "byok" as const },
+    onboarding: {
+      ...mockBootstrap.onboarding,
+      completed: true,
+      currentStep: "completed" as const,
+      completedAt: "2026-09-01T00:00:00.000Z"
+    }
+  };
+  return appReducer(createInitialAppState(), appActions.bootstrapLoaded(bootstrap, "/welcome"));
+}
+
+function authResult(overrides: { isNewUser?: boolean } = {}): CuberouterAuthResult {
   return {
     session: {
       authenticated: true,
+      // The repository computes this from whether an account row already existed.
+      isNewUser: overrides.isNewUser ?? true,
       profile: {
         userId: "cuberouter-user-1",
         email: "alice@example.com",
         phoneNumber: null,
         nickname: "alice",
         registeredAt: "2026-09-16T00:00:00.000Z",
-        hasFinishedGuide: false
+        hasFinishedGuide: null
       }
     },
     provisioning: {

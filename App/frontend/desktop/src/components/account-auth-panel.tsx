@@ -4,7 +4,7 @@ import { useState } from "react";
 import { setAnalyticsUserId } from "../analytics/analytics-context.js";
 import { persistLoginModeSelection } from "../app/login-mode.js";
 import { useApiClients } from "../app/providers.js";
-import { buildAccountOnboardingStartPatch, resolvePostLoginRoute, shouldShowFirstEncounterReport } from "../app/routes.js";
+import { buildAccountOnboardingStartPatch, resolvePostLoginRoute } from "../app/routes.js";
 import { useTranslation } from "../i18n/use-translation.js";
 import { getLegalLinkUrl } from "../legal/legal-links.js";
 import { appActions } from "../state/app-actions.js";
@@ -99,10 +99,14 @@ export function AccountAuthPanel() {
       setContinuing(false);
     }
 
-    const onboardingPatch: Partial<OnboardingStateDto> =
-      session.profile.hasFinishedGuide && state.bootstrap && !shouldShowFirstEncounterReport(state.bootstrap.onboarding)
-      ? { completed: true, currentStep: "completed", completedAt: new Date().toISOString(), hasAcceptedTerms: true }
-      : buildAccountOnboardingStartPatch(state.bootstrap?.onboarding);
+    // `profile.hasFinishedGuide` is always null for a cuberouter identity, so the returning
+    // user has to be recognised from `isNewUser` (the repository computes it from whether an
+    // account row already existed) plus the onboarding state already persisted locally.
+    // Only a brand-new identity may start onboarding: persisting the start patch for a
+    // returning user resets onboarding for good, because the reset survives restarts.
+    const onboardingPatch: Partial<OnboardingStateDto> = session.isNewUser === true
+      ? buildAccountOnboardingStartPatch(state.bootstrap?.onboarding)
+      : {};
     const nextOnboarding = {
       ...buildAccountOnboardingStartPatch(state.bootstrap?.onboarding),
       ...state.bootstrap?.onboarding,
@@ -118,7 +122,8 @@ export function AccountAuthPanel() {
         onboarding: onboardingPatch
       });
       setPendingAuthResult(null);
-      // The self-test warning never changes routing: new users run onboarding, returning users follow their guide state.
+      // The self-test warning never changes routing: a new user runs onboarding, a returning
+      // user follows the onboarding state already persisted on this machine.
       dispatch(appActions.navigate(
         resolvePostLoginRoute({ onboarding: nextOnboarding, preferredMode: state.navigation.preferredMode })
       ));

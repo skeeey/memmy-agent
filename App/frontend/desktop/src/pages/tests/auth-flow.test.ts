@@ -270,13 +270,15 @@ function authResult(): CuberouterAuthResult {
   return {
     session: {
       authenticated: true,
+      isNewUser: true,
       profile: {
         userId: "cuberouter-user-1",
         email: "alice@example.com",
         phoneNumber: null,
         nickname: "alice",
         registeredAt: "2026-09-16T00:00:00.000Z",
-        hasFinishedGuide: false
+        // The cuberouter service always writes null here: it has no memmy cloud guide state.
+        hasFinishedGuide: null
       }
     },
     provisioning: {
