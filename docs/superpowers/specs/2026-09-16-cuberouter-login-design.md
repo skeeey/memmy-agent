@@ -83,18 +83,11 @@ export interface CuberouterSession { accessToken: string; expiresAt?: string; us
 
 所有请求带 `Authorization: Bearer <accessToken>`（`middleware.UserAuth` 通过 `ParseDashboardAccessToken` 接受该 token）；注册与登录不带。
 
-错误映射（统一成本地带 `code` 的 `Error`，风格对齐 `classifyCloudError`）：
+错误映射。cuberouter 的业务错误是 **HTTP 200 + `success: false` + 已经按 `lang` 本地化好的 message**（`common.ApiErrorI18n`），只有鉴权中间件才返回 401。因此**不做 message 文本匹配**——服务端有中英两套文案，靠关键词匹配必然脆——只保留三个有行为差异的码，其余一律透出服务端原文：
 
-- 传输失败/超时 → `service_unavailable`
-- `success === false` 且 message 含"用户已存在" → `username_taken`
-- 注册被禁用 / 密码注册被禁用 → `registration_disabled`
-- 密码强度或长度校验失败（cuberouter 侧 `validate:"min=8,max=20,passwordStrength"`）→ `invalid_argument`，透出原文
-- 登录 401 或 message 含用户名密码错误 → `invalid_credentials`
-- 登录返回 `data.require_2fa === true` → `two_factor_required`
-- message 含"Turnstile token 为空" → `turnstile_required`
-- message 含"邮箱验证" → `email_verification_required`
-- message 含"最大令牌数量" → `token_limit_reached`
-- token 列表里找不到目标 token / 取 key 失败 → `provision_failed`
+- `two_factor_required`：**结构化判定**（login 返回 `success: true` 且 `data.require_2fa === true`）
+- `service_unavailable`：传输失败或超时
+- `rejected`：其余一切失败；`message` 直接用服务端原文（用户名已存在、注册被禁用、密码强度、Turnstile、邮箱验证、令牌数量上限等都走这一条，在 UI 上原样展示）
 
 ### 4.2 新增：编排服务
 
@@ -109,6 +102,7 @@ export interface CuberouterAccountService {
 ```
 
 - `register`：`client.register` → `completeLogin(username, password)`
+- 会话写入**不传 `isNewUser`**，交给 `AccountSessionRepository.upsert` 按"是否已有该 `user_id` 的行"自行判定；写死 `true` 会让老用户每次登录都被当成新用户、重走一遍 onboarding。
 - `login`（含注册后的续接，内部 `completeLogin(username, password)`）：
   1. `client.login` → JWT + 用户资料
   2. `ensureApiKey(jwt)` → 明文 key
@@ -199,7 +193,7 @@ export type CuberouterAuthResult = z.infer<typeof CuberouterAuthResultSchema>;
     capabilities: ModelCapability[];
     /** 需要指向该 preset 的 assignment 槽位（agent / memory_summary / memory_evolution / embedding）。 */
     assign: ModelCapability[];
-  }): Promise<{ workspace: ModelWorkspace; endpointId: string; presetId: string }>;
+  }): Promise<void>;
   ```
 
   内核即 `api-key-page.tsx` 里 `saveConfig` 的现有步骤：`getModelConfig()` → `upsertByokPreset({ provider: "openai", endpoint: input.endpoint.apiBase, protocol: input.endpoint.protocol, apiKey, model, capabilities })` → 对 `assign` 里每个能力调 `assignCatalogPreset(workspace, "byok", capability, presetId)` → `modelConfigInput` → `saveModelCatalog`。
@@ -252,6 +246,8 @@ export type CuberouterAuthResult = z.infer<typeof CuberouterAuthResultSchema>;
 
 `planType` 与 `region` 保持为空。
 
+写入侧传 `authChannel: "cuberouter"`，但**读取侧要两处配合才读得出来**：`resolveExplicitAccountAuthChannel` 现在硬编码 `value === "email" || value === "phone"`，必须改成按 `AccountChannelSchema` 解析；`toProfileView` 与 `upsert` 的返回对象都要带上 `identityProvider`（否则 schema 的 `.default("memmy_cloud")` 会把 cuberouter 会话写成云身份）。
+
 **JWT 的生命周期**：只在注册/登录那一次调用链里使用，过期不影响日常运行（key 已在 `config.yaml`）。将来若要"重新获取 key"，需要重新输入密码登录。
 
 ## 7. 云功能隐藏
@@ -273,20 +269,21 @@ export type CuberouterAuthResult = z.infer<typeof CuberouterAuthResultSchema>;
 
 ## 8. 错误处理
 
-| 场景 | 错误码 | 用户可见提示（中文） | 是否阻断 |
+分两层：**表单层**负责把服务端原文放到用户眼前，**流程层**负责区分"能重试"和"要换做法"。
+
+表单常驻一个「已有账号？去登录 / 没有账号？去注册」切换按钮，所以**不依赖任何错误码来做分支**——用户看到"用户名已存在"后自己切换即可。这是有意为之：见 §4.1 关于不做文本匹配的理由。
+
+| 场景 | 错误码 | 用户可见提示 | 是否阻断 |
 |---|---|---|---|
-| 用户名已存在 | `username_taken` | 用户名已被占用，请改用登录 | 阻断，预填用户名 |
-| 注册/密码注册被禁用 | `registration_disabled` | 目标服务未开放注册 | 阻断 |
-| 密码不满足 8–20 位或缺少大小写/数字 | 本地预校验 | 密码需 8–20 位且包含大写、小写和数字 | 阻断（本地，不发请求） |
-| 用户名或密码错误 | `invalid_credentials` | 用户名或密码不正确 | 阻断 |
+| 密码不满足 8–20 位或缺少大小写/数字 | 本地预校验，不发请求 | 密码需 8–20 位且包含大写、小写和数字 | 阻断 |
+| 两次密码不一致 | 本地预校验 | 两次输入的密码不一致 | 阻断 |
+| 用户名已存在 / 注册被禁用 / 密码强度被拒 / Turnstile / 邮箱验证 / 令牌数量上限 | `rejected` | **服务端原文**（cuberouter 按请求 `lang` 本地化） | 阻断 |
+| 用户名或密码错误 | `rejected` | 服务端原文 | 阻断 |
 | 账号开启 2FA | `two_factor_required` | 该账号启用了两步验证，本版本不支持，请在服务端关闭后重试 | 阻断 |
-| 目标服务开启 Turnstile | `turnstile_required` | 目标服务开启了人机校验，本版本不支持 | 阻断 |
-| 目标服务开启了邮箱验证 | `email_verification_required` | 目标服务要求邮箱验证，请在服务端关闭后重试 | 阻断 |
-| 令牌数量达上限 | `token_limit_reached` | 账号令牌数量已达上限 | 阻断 |
-| 建完列表里找不到 token 或取 key 失败 | `provision_failed` | 获取密钥失败，请重试 | 阻断，可重试（幂等） |
-| cuberouter 不可达/超时 | `service_unavailable` | 无法连接服务，请检查网络或服务地址 | 阻断 |
-| 写配置冲突 | `config_write_busy` / `model_config_changed` | 重试一次；仍失败提示"账号已创建，模型配置未完成，可重试" | 阻断但账号已建 |
-| 连接自检失败（模型不存在、额度为 0、分组无权限） | — | 警告："模型暂不可用（<原因>），可在设置中修改" | **不阻断**（D7） |
+| cuberouter 不可达/超时 | `service_unavailable` | 无法连接服务，请检查服务地址与网络 | 阻断 |
+| 建完列表里找不到 token / 取 key 失败 | `rejected` | cuberouter 未返回新建的令牌 | 阻断，可重试（幂等） |
+| 写配置冲突 | `config_write_busy` / `model_config_changed` | 自动重试一次；仍失败提示"模型配置写入失败，请重试" | 阻断但账号已建 |
+| 连接自检失败（模型不存在、额度为 0、分组无权限） | — | 警告："模型暂时不可用：<原因>" | **不阻断**（D7） |
 
 ## 9. 配置项
 
