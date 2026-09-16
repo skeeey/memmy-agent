@@ -319,6 +319,30 @@ export type CuberouterAuthResult = z.infer<typeof CuberouterAuthResultSchema>;
 3. 走一遍注册 → 检查 `~/.memmy/config.yaml` 的 provider/endpoint/preset/assignments → 发一条消息验证模型可用
 4. 重新走一遍登录，确认复用同一个 token（cuberouter 后台 token 数量不增加）
 
+### 11.1 冒烟结果（2026-09-16）
+
+按约定只跑后端链路（不动 `~/.memmy/config.yaml` 与桌面 UI）：本机起 cuberouter（`./new-api`，端口 3000），用**真实的** `createHttpCuberouterClient` + `createCuberouterAccountService` 驱动。
+
+全绿的部分：
+
+| 检查 | 结果 |
+|---|---|
+| `register` 返回 `{apiKey, apiBase, model}`，`apiBase` 为 `<base>/v1`、model 取自 env | ✅ |
+| `session.profile.identityProvider === "cuberouter"` | ✅ |
+| 会话经真实仓库落盘再读回：仍已认证、身份仍是 cuberouter | ✅ |
+| `getAuthChannel() === "cuberouter"`，加密存储里放的是 JWT | ✅ |
+| 第二次 `login` 复用同一个 `memmy-desktop` token（数量恒为 1，不堆积） | ✅ |
+
+唯一未通过的是"真实打一次 `/v1/chat/completions`"：cuberouter 返回 `503 model_not_found`，原因是其**渠道查询本身失败**——
+
+```
+sql: Scan error on column index 28, name "channel_info": unexpected end of JSON input
+```
+
+该实例的 `new-api` 二进制构建于 2026-08-18，而 `one-api.db` 最后写入于 09-14、源码 HEAD 为 09-16：**旧二进制读不了新库的 `channel_info`**。这是实例的版本错配，与本特性无关；从当前源码重起 cuberouter 后该项即可验证。
+
+两点需在真实部署前确认（spec §13 已列为风险，此处是实测补充）：新注册用户 `quota = 0`；冒烟在实例里留下了一个测试用户 `memmy-smoke-1` 与其 `memmy-desktop` token。
+
 ## 12. 实施顺序
 
 各阶段都能独立验证，前四步不碰 UI，可先合入：
