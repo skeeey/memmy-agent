@@ -1090,7 +1090,7 @@ export const AsrTranscriptionResponseSchema = z.object({
 });
 export type AsrTranscriptionResponse = z.infer<typeof AsrTranscriptionResponseSchema>;
 
-export const AccountChannelSchema = z.enum(["email", "phone"]);
+export const AccountChannelSchema = z.enum(["email", "phone", "cuberouter"]);
 export type AccountChannel = z.infer<typeof AccountChannelSchema>;
 
 export const AccountLocaleSchema = z.enum(["zh", "en"]);
@@ -1155,7 +1155,8 @@ export const AccountProfileViewSchema = z.object({
     planType: z.string().nullable(),
     hasFinishedGuide: z.boolean().nullable(),
     region: z.string().nullable(),
-    registeredAt: z.string().datetime().nullable()
+    registeredAt: z.string().datetime().nullable(),
+    identityProvider: z.enum(["memmy_cloud", "cuberouter"]).default("memmy_cloud")
 });
 export type AccountProfileView = z.infer<typeof AccountProfileViewSchema>;
 
@@ -1171,6 +1172,28 @@ export const AccountSessionViewSchema = z.discriminatedUnion("authenticated", [
     })
 ]);
 export type AccountSessionView = z.infer<typeof AccountSessionViewSchema>;
+
+/** 定义 cuberouter 注册/登录入参，规则对齐 cuberouter 的 User 校验。 */
+export const CuberouterAuthInputSchema = z.object({
+    username: z.string().trim().min(1).max(50),
+    password: z.string().min(8).max(20)
+});
+export type CuberouterAuthInput = z.infer<typeof CuberouterAuthInputSchema>;
+
+/** 定义注册/登录后返回的模型供给信息。 */
+export const CuberouterProvisioningSchema = z.object({
+    apiKey: z.string().min(1),
+    apiBase: z.string().url(),
+    model: z.string().min(1)
+});
+export type CuberouterProvisioning = z.infer<typeof CuberouterProvisioningSchema>;
+
+/** Schema for cuberouter auth result. */
+export const CuberouterAuthResultSchema = z.object({
+    session: AccountSessionViewSchema,
+    provisioning: CuberouterProvisioningSchema
+});
+export type CuberouterAuthResult = z.infer<typeof CuberouterAuthResultSchema>;
 
 /** One-time invitation outcome returned only by account login. */
 export const InvitationResultSchema = z.discriminatedUnion("status", [

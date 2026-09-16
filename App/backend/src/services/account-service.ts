@@ -355,6 +355,8 @@ function toSessionProfileInput(profile: CloudAccountProfile): AccountSessionProf
     hasFinishedGuide: profile.hasFinishedGuide,
     region: profile.region,
     registeredAt: profile.registeredAt,
+    // Cloud profiles always come from the memmy_cloud identity provider.
+    identityProvider: "memmy_cloud",
     rawProfile: profile.rawProfile
   };
 }

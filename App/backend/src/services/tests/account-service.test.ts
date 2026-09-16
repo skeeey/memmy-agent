@@ -214,7 +214,7 @@ describe("AccountService", () => {
       },
       {
         upsert: {
-          profile: cloudProfile(),
+          profile: { ...cloudProfile(), identityProvider: "memmy_cloud" },
           isNewUser: true,
           uuid: "cloud-account-user-1",
           cloudUuid: "cloud.login.uuid",
@@ -223,7 +223,7 @@ describe("AccountService", () => {
       },
       {
         upsert: {
-          profile: cloudProfile(),
+          profile: { ...cloudProfile(), identityProvider: "memmy_cloud" },
           isNewUser: true
         }
       }

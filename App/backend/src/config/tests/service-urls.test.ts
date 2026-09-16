@@ -1,6 +1,6 @@
 /** Service urls tests. */
 import { describe, expect, it } from "vitest";
-import { resolveCloudClientConfig } from "../service-urls.js";
+import { resolveCloudClientConfig, resolveCuberouterClientConfig } from "../service-urls.js";
 
 describe("service URL config", () => {
   it("默认网关来自 MEMMY_CLOUD_SERVICE", () => {
@@ -40,5 +40,29 @@ describe("service URL config", () => {
         MEMMY_CLOUD_SERVICE: "https://gw.example.cn"
       }).baseUrl
     ).toBe("http://127.0.0.1:3000");
+  });
+});
+
+describe("resolveCuberouterClientConfig", () => {
+  it("falls back to the local cuberouter instance and deepseek-flash", () => {
+    expect(resolveCuberouterClientConfig({})).toEqual({
+      baseUrl: "http://127.0.0.1:3000",
+      model: "deepseek-flash",
+      timeoutMs: 10_000
+    });
+  });
+
+  it("honors overrides and strips trailing slashes", () => {
+    expect(
+      resolveCuberouterClientConfig({
+        MEMMY_CUBEROUTER_URL: "https://router.example.com/",
+        MEMMY_CUBEROUTER_MODEL: "kimi-k3-a",
+        MEMMY_CUBEROUTER_TIMEOUT_MS: "1500"
+      })
+    ).toEqual({
+      baseUrl: "https://router.example.com",
+      model: "kimi-k3-a",
+      timeoutMs: 1_500
+    });
   });
 });
