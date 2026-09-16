@@ -1114,7 +1114,25 @@ import type { CuberouterAccountService } from "../../../../services/cuberouter-a
 
 （保留云端分支给 `identityProvider === "memmy_cloud"` 的老会话）
 
-- [ ] **Step 6: 装配**
+- [ ] **Step 6: 让启动同步接受 cuberouter 身份（否则每次重启都会掉登录）**
+
+`App/backend/src/services/runtime-config-sync-service.ts` 的 `clearMismatchedActiveSession` 在 `getAuthChannel()` 与 `options.accountChannel` 不一致时会**清掉当前会话**，还会顺带调 `clearAccountModelProjectionFromMemmyConfig({ownerAccountId})`。cuberouter 会话的 channel 是 `"cuberouter"`，桌面包传下来的是 `"phone"`/`"email"`，于是每次启动都会清登录——这个功能等于不成立。改法：
+
+```ts
+  const activeChannel = options.appStateStore.repositories.accountSession.getAuthChannel();
+  if (activeChannel === "cuberouter" || activeChannel === options.accountChannel) {
+    return null;
+  }
+```
+
+（替换原先那句 `if (options.appStateStore.repositories.accountSession.getAuthChannel() === options.accountChannel) { return null; }`）
+
+在 `App/backend/src/services/tests/runtime-config-sync-service.test.ts` 追加回归用例：`accountChannel: "phone"`，会话写入 `authChannel: "cuberouter"`，断言 `syncRuntimeConfigWithAppState` 之后 `accountSession.get().authenticated` 仍为 `true`，且结果 `reason` 不是 `"account_session_channel_mismatch"`。
+
+Run: `npm --prefix App/backend exec vitest run src/services/tests/runtime-config-sync-service.test.ts`
+Expected: PASS
+
+- [ ] **Step 7: 装配**
 
 `App/backend/src/services/index.ts`：
 - import：`import { createCuberouterAccountService } from "./cuberouter-account-service.js";` 和 `import type { CuberouterClient } from "../adapters/outbound/cuberouter-client/index.js";`
@@ -1145,7 +1163,7 @@ import type { CuberouterAccountService } from "../../../../services/cuberouter-a
 
 并在 `createBackendServices({...})` 的调用里加上 `cuberouterConfig,` 与 `cuberouterClient,`；import 补 `resolveCuberouterClientConfig`、`createHttpCuberouterClient`。
 
-- [ ] **Step 7: 全量跑后端测试**
+- [ ] **Step 8: 全量跑后端测试**
 
 Run: `npm --prefix App/backend exec vitest run src/adapters/inbound/local-api/tests/account-routes.test.ts src/services/tests/account-service.test.ts`
 Expected: PASS
@@ -1153,10 +1171,10 @@ Expected: PASS
 Run: `npm --prefix App/backend run typecheck`
 Expected: PASS
 
-- [ ] **Step 8: 提交**
+- [ ] **Step 9: 提交**
 
 ```bash
-git add App/backend/src/adapters/inbound/local-api/routes/account.ts App/backend/src/adapters/inbound/local-api/tests/account-routes.test.ts App/backend/src/services/index.ts App/backend/src/services/account-service.ts App/backend/src/services/tests/account-service.test.ts App/backend/src/index.ts
+git add App/backend/src/adapters/inbound/local-api/routes/account.ts App/backend/src/adapters/inbound/local-api/tests/account-routes.test.ts App/backend/src/services/index.ts App/backend/src/services/account-service.ts App/backend/src/services/tests/account-service.test.ts App/backend/src/services/runtime-config-sync-service.ts App/backend/src/services/tests/runtime-config-sync-service.test.ts App/backend/src/index.ts
 git commit -m "feat(auth): switch account routes to cuberouter register/login"
 ```
 
