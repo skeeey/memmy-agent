@@ -1,47 +1,47 @@
 /** Account module. */
 import {
   AccountInvitationViewSchema,
-  AccountLoginResultViewSchema,
   AccountProfileViewSchema,
   AccountSessionViewSchema,
   AvatarOptionSchema,
+  CuberouterAuthInputSchema,
+  CuberouterAuthResultSchema,
   OkResponseSchema,
-  SendCodeInputSchema,
-  SendCodeResponseSchema,
   SetAvatarInputSchema,
-  UpdateAccountProfileInputSchema,
-  VerifyCodeInputSchema
+  UpdateAccountProfileInputSchema
 } from "@memmy/local-api-contracts";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { AccountService } from "../../../../services/account-service.js";
 import type { AppConfigService } from "../../../../services/app-config-service.js";
+import type { CuberouterAccountService } from "../../../../services/cuberouter-account-service.js";
 import { withErrorEnvelope } from "../../../../services/error-envelope.js";
 
 /** Contract for register account routes options. */
 export interface RegisterAccountRoutesOptions {
   account: AccountService;
   appConfig: AppConfigService;
+  cuberouterAccount: CuberouterAccountService;
   authenticateRuntimeToken: (request: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
 }
 
 /** Registers register account routes. */
 export function registerAccountRoutes(app: FastifyInstance, options: RegisterAccountRoutesOptions): void {
   app.post(
-    "/api/account/send-code",
+    "/api/account/register",
     { preHandler: options.authenticateRuntimeToken },
     withErrorEnvelope(async (request, reply) => {
-      const input = SendCodeInputSchema.parse(request.body);
-      const response = SendCodeResponseSchema.parse(await options.account.sendCode(input));
+      const input = CuberouterAuthInputSchema.parse(request.body);
+      const response = CuberouterAuthResultSchema.parse(await options.cuberouterAccount.register(input));
       return reply.send(response);
     })
   );
 
   app.post(
-    "/api/account/verify-code",
+    "/api/account/login",
     { preHandler: options.authenticateRuntimeToken },
     withErrorEnvelope(async (request, reply) => {
-      const input = VerifyCodeInputSchema.parse(request.body);
-      const response = AccountLoginResultViewSchema.parse(await options.account.verifyCode(input));
+      const input = CuberouterAuthInputSchema.parse(request.body);
+      const response = CuberouterAuthResultSchema.parse(await options.cuberouterAccount.login(input));
       return reply.send(response);
     })
   );

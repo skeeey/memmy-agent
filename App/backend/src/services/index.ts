@@ -1,4 +1,3 @@
-import type { AccountChannel } from "@memmy/local-api-contracts";
 import { dirname, join } from "node:path";
 import type { AppStateStore } from "../infrastructure/app-state-store/index.js";
 import { type MemmyConfigWriter } from "../infrastructure/memmy-config/index.js";
@@ -13,7 +12,9 @@ import { createHttpMemmyAgentAdminClient } from "../adapters/outbound/memmy-agen
 import type { MemmyAgentAdminClient } from "../adapters/outbound/memmy-agent-admin-client/index.js";
 import type { SkillTargetRegistry } from "../adapters/outbound/skill-writer/target-registry.js";
 import type { CloudClient } from "../adapters/outbound/cloud-client/index.js";
+import type { CuberouterClient } from "../adapters/outbound/cuberouter-client/index.js";
 import type { MemoryClient } from "../adapters/outbound/memory-client/index.js";
+import type { CuberouterClientConfig } from "../config/service-urls.js";
 import type { PermissionManager } from "../permission/index.js";
 import {
   createAgentSourceLifecycleAnalytics,
@@ -39,6 +40,10 @@ import {
   type BootstrapService
 } from "./bootstrap-service.js";
 import { createChannelService, type ChannelService } from "./channel-service.js";
+import {
+  createCuberouterAccountService,
+  type CuberouterAccountService
+} from "./cuberouter-account-service.js";
 import { createIntegrationService, type IntegrationService } from "./integration-service.js";
 import { createIngestionService, type IngestionService } from "./ingestion-service.js";
 import { createLocalDataService, type LocalDataService } from "./local-data-service.js";
@@ -65,6 +70,8 @@ export interface BackendServices {
   bootstrap: BootstrapService;
   appConfig: AppConfigService;
   account: AccountService;
+  /** cuberouter-backed register/login. */
+  cuberouterAccount: CuberouterAccountService;
   /** Integrations. */
   integrations: IntegrationService;
   /** Channels. */
@@ -106,8 +113,10 @@ export interface CreateBackendServicesOptions {
   memmyAgentAdminClient?: MemmyAgentAdminClient;
   /** Memmy agent admin bootstrap secret. */
   memmyAgentAdminBootstrapSecret?: string | null;
-  /** Verification channel supported by the current desktop package. */
-  accountChannel?: AccountChannel;
+  /** cuberouter REST client used by the register/login routes. */
+  cuberouterClient: CuberouterClient;
+  /** cuberouter configuration (base URL and provisioned model). */
+  cuberouterConfig: CuberouterClientConfig;
   scanPreferencesStore?: ScanPreferencesStore;
 }
 
@@ -193,8 +202,13 @@ export function createBackendServices(options: CreateBackendServicesOptions): Ba
       accountSessionRepository: options.appStateStore.repositories.accountSession,
       bootstrapRepository: options.appStateStore.repositories.bootstrap,
       memmyConfigWriter: options.memmyConfigWriter,
-      memoryClient: options.memoryClient,
-      accountChannel: options.accountChannel
+      memoryClient: options.memoryClient
+    }),
+    cuberouterAccount: createCuberouterAccountService({
+      client: options.cuberouterClient,
+      accountSessionRepository: options.appStateStore.repositories.accountSession,
+      baseUrl: options.cuberouterConfig.baseUrl,
+      model: options.cuberouterConfig.model
     }),
     integrations: createIntegrationService({
       cloudClient: options.cloudClient,

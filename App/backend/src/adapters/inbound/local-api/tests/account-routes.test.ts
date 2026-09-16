@@ -18,17 +18,6 @@ describe("account local api routes", () => {
     const calls: string[] = [];
     app = createServer({
       account: {
-        async sendCode(input) {
-          calls.push(`send:${input.channel}:${input.email ?? input.phoneNumber}`);
-          return { ok: true, resendAfterSec: 60 };
-        },
-        async verifyCode(input) {
-          calls.push(`verify:${input.verificationCode}`);
-          return {
-            session: accountSession(),
-            invitationResult: { status: "success", inviteeRewardTokens: 500_000 }
-          };
-        },
         async getInvitation() {
           calls.push("invitation");
           return {
@@ -59,18 +48,6 @@ describe("account local api routes", () => {
       }
     });
 
-    const sendCode = await injectJson("POST", "/api/account/send-code", {
-      channel: "email",
-      email: "hello@example.com",
-      locale: "zh"
-    });
-    const verifyCode = await injectJson("POST", "/api/account/verify-code", {
-      channel: "email",
-      email: "hello@example.com",
-      verificationCode: "123456",
-      loginSource: "Memmy",
-      invitationCode: "MEMMY-A1B2C3"
-    });
     const invitation = await injectJson("PUT", "/api/account/invitation", {});
     const profile = await injectJson("PATCH", "/api/account/profile", { nickname: "Memmy User" });
     const guideFinished = await injectJson("POST", "/api/account/guide-finished", {});
@@ -81,12 +58,6 @@ describe("account local api routes", () => {
       headers: { "x-memmy-local-token": "test-token" }
     });
 
-    expect(sendCode.json()).toEqual({ ok: true, resendAfterSec: 60 });
-    expect(verifyCode.json()).toMatchObject({
-      session: { authenticated: true, profile: { email: "hello@example.com" } },
-      invitationResult: { status: "success", inviteeRewardTokens: 500_000 }
-    });
-    expect(JSON.stringify(verifyCode.json())).not.toContain("cloud.login.uuid");
     expect(invitation.json()).toMatchObject({
       invitationCode: "MEMMY-A1B2C3",
       remainingInvitesToday: 2
@@ -96,14 +67,61 @@ describe("account local api routes", () => {
     expect(logout.json()).toEqual({ ok: true });
     expect(session.json()).toMatchObject({ authenticated: true });
     expect(calls).toEqual([
-      "send:email:hello@example.com",
-      "verify:123456",
       "invitation",
       "profile:Memmy User",
       "guide-finished",
       "logout",
       "session"
     ]);
+  });
+
+  it("registers through the cuberouter account service and returns the provisioning payload", async () => {
+    const calls: string[] = [];
+    app = createServer({
+      cuberouterAccount: {
+        async register(input: { username: string; password: string }) {
+          calls.push(`register:${input.username}`);
+          return {
+            session: {
+              authenticated: true,
+              isNewUser: true,
+              profile: {
+                userId: "7",
+                email: null,
+                phoneNumber: null,
+                nickname: "Alice",
+                avatarUrl: null,
+                planType: null,
+                hasFinishedGuide: null,
+                region: null,
+                registeredAt: null,
+                identityProvider: "cuberouter"
+              }
+            },
+            provisioning: {
+              apiKey: "sk-plain",
+              apiBase: "http://127.0.0.1:3000/v1",
+              model: "deepseek-flash"
+            }
+          };
+        },
+        async login() {
+          throw new Error("login not used");
+        },
+        async logout() {
+          return { ok: true };
+        }
+      }
+    });
+
+    const response = await injectJson("POST", "/api/account/register", {
+      username: "alice",
+      password: "Passw0rd1"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().provisioning.apiKey).toBe("sk-plain");
+    expect(calls).toEqual(["register:alice"]);
   });
 
   it("lists avatars and stores the selected avatar behind the runtime token", async () => {
@@ -153,20 +171,15 @@ describe("account local api routes", () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it("returns invalid_argument for invalid account payloads", async () => {
+  it("rejects credentials that violate the shared schema", async () => {
     app = createServer();
 
-    const response = await injectJson("POST", "/api/account/send-code", {
-      channel: "email",
-      locale: "zh"
+    const response = await injectJson("POST", "/api/account/login", {
+      username: "alice",
+      password: "short"
     });
 
     expect(response.statusCode).toBe(400);
-    expect(response.json()).toMatchObject({
-      error: {
-        code: "invalid_argument"
-      }
-    });
   });
 });
 
@@ -201,16 +214,18 @@ function createServer(overrides: Record<string, unknown> = {}): FastifyInstance 
         return { avatarId: "memmy-default" };
       }
     },
+    cuberouterAccount: {
+      async register() {
+        throw new Error("register not used");
+      },
+      async login() {
+        throw new Error("login not used");
+      },
+      async logout() {
+        return { ok: true };
+      }
+    },
     account: {
-      async sendCode() {
-        return { ok: true, resendAfterSec: 60 };
-      },
-      async verifyCode() {
-        return {
-          session: accountSession(),
-          invitationResult: { status: "not_provided" }
-        };
-      },
       async getInvitation() {
         return {
           enabled: false,

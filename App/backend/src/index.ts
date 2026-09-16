@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import { createDefaultAgentAdapterRegistry, type AgentAdapterRegistry } from "./adapters/outbound/agent-adapter/index.js";
 import { createAppStateStore } from "./infrastructure/app-state-store/index.js";
 import { createHttpCloudClient, type CloudClient } from "./adapters/outbound/cloud-client/index.js";
+import { createHttpCuberouterClient } from "./adapters/outbound/cuberouter-client/index.js";
 import {
   createHttpMemoryClient,
   type MemoryClient,
@@ -23,7 +24,7 @@ import {
 import { createPermissionManager } from "./permission/index.js";
 import { createLocalApiServer } from "./adapters/inbound/local-api/server.js";
 import { createBackendServices, type BootstrapScenario } from "./services/index.js";
-import { resolveCloudClientConfig, type CloudClientConfig } from "./config/service-urls.js";
+import { resolveCloudClientConfig, resolveCuberouterClientConfig, type CloudClientConfig } from "./config/service-urls.js";
 import { resetAccountRuntimeForDesktopInstallChange } from "./services/desktop-install-state-service.js";
 import {
   syncRuntimeConfigForStartup,
@@ -121,6 +122,11 @@ export async function createLocalBackend(options: CreateLocalBackendOptions): Pr
       cloudConfig,
       tryGetInstallationId(appStateStore)
     );
+    const cuberouterConfig = resolveCuberouterClientConfig(process.env);
+    const cuberouterClient = createHttpCuberouterClient({
+      baseUrl: cuberouterConfig.baseUrl,
+      timeoutMs: cuberouterConfig.timeoutMs
+    });
     const agentAdapterRegistry =
       options.agentAdapterRegistry ??
       createDefaultAgentAdapterRegistry({
@@ -138,7 +144,8 @@ export async function createLocalBackend(options: CreateLocalBackendOptions): Pr
       memmyConfigWriter,
       memmyConfigPath,
       scanPreferencesStore,
-      accountChannel: options.accountChannel,
+      cuberouterClient,
+      cuberouterConfig,
       memmyAgentAdminClient: options.memmyAgentAdminClient,
       memmyAgentAdminBootstrapSecret: await readAgentGatewayBootstrapSecret(memmyConfigPath)
     });

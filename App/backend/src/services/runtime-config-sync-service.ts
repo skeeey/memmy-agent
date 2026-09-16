@@ -288,7 +288,11 @@ async function clearMismatchedActiveSession(
   if (!options.accountChannel) return null;
   const session = options.appStateStore.repositories.accountSession.get();
   if (!session.authenticated) return null;
-  if (options.appStateStore.repositories.accountSession.getAuthChannel() === options.accountChannel) {
+  const activeChannel = options.appStateStore.repositories.accountSession.getAuthChannel();
+  // A cuberouter login never carries the desktop package's verification channel, so the
+  // mismatch rule below must not apply to it: matching it against "phone"/"email" would
+  // clear the session on every restart.
+  if (activeChannel === "cuberouter" || activeChannel === options.accountChannel) {
     return null;
   }
 

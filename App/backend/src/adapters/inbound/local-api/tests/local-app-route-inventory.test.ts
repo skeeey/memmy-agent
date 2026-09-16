@@ -61,12 +61,8 @@ describe("local app route inventory", () => {
       { method: "GET", url: "/api/account/avatars" },
       { method: "PATCH", url: "/api/account/avatar", payload: { avatarId: "memmy-default" } },
       { method: "PATCH", url: "/api/app/skin", payload: { skinId: "default" } },
-      { method: "POST", url: "/api/account/send-code", payload: { channel: "email", email: "hello@example.com", locale: "zh" } },
-      {
-        method: "POST",
-        url: "/api/account/verify-code",
-        payload: { channel: "email", email: "hello@example.com", verificationCode: "123456", loginSource: "Memmy" }
-      },
+      { method: "POST", url: "/api/account/register", payload: { username: "alice", password: "Passw0rd1" } },
+      { method: "POST", url: "/api/account/login", payload: { username: "alice", password: "Passw0rd1" } },
       { method: "PATCH", url: "/api/account/profile", payload: { nickname: "Memmy User" } },
       { method: "POST", url: "/api/account/logout", payload: {} },
       { method: "GET", url: "/api/account/session" },
@@ -174,16 +170,18 @@ function createServer(): FastifyInstance {
         return { skinId: input.skinId };
       }
     },
+    cuberouterAccount: {
+      async register() {
+        return cuberouterAuthResult();
+      },
+      async login() {
+        return cuberouterAuthResult();
+      },
+      async logout() {
+        return { ok: true };
+      }
+    },
     account: {
-      async sendCode() {
-        return { ok: true, resendAfterSec: 60 };
-      },
-      async verifyCode() {
-        return {
-          session: accountSession(),
-          invitationResult: { status: "not_provided" as const }
-        };
-      },
       async updateProfile(input) {
         return { ...accountSession().profile, nickname: input.nickname };
       },
@@ -432,6 +430,32 @@ function accountSession() {
       hasFinishedGuide: false,
       region: null,
       registeredAt: "2026-06-02T10:00:00.000Z"
+    }
+  };
+}
+
+function cuberouterAuthResult() {
+  return {
+    session: {
+      authenticated: true,
+      isNewUser: false,
+      profile: {
+        userId: "7",
+        email: null,
+        phoneNumber: null,
+        nickname: "alice",
+        avatarUrl: null,
+        planType: null,
+        hasFinishedGuide: null,
+        region: null,
+        registeredAt: null,
+        identityProvider: "cuberouter"
+      }
+    },
+    provisioning: {
+      apiKey: "sk-cuberouter",
+      apiBase: "http://127.0.0.1:3000/v1",
+      model: "deepseek-flash"
     }
   };
 }

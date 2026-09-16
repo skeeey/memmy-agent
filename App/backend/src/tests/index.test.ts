@@ -16,22 +16,20 @@ import { createMockMemoryClient } from "./support/mock-memory-client.js";
 let tempDir: string | undefined;
 let backend: LocalBackend | undefined;
 let integrationServer: ReturnType<typeof createServer> | undefined;
+let cuberouterServer: ReturnType<typeof createServer> | undefined;
+let previousCuberouterUrl: string | undefined;
+let cuberouterUrlWasSet = false;
 
 afterEach(async () => {
   await backend?.close();
   backend = undefined;
-  if (integrationServer) {
-    await new Promise<void>((resolve, reject) => {
-      integrationServer?.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve();
-      });
-    });
-    integrationServer = undefined;
+  await closeServer(integrationServer);
+  integrationServer = undefined;
+  await closeServer(cuberouterServer);
+  cuberouterServer = undefined;
+  if (cuberouterUrlWasSet) {
+    restoreOptionalEnv("MEMMY_CUBEROUTER_URL", previousCuberouterUrl);
+    cuberouterUrlWasSet = false;
   }
 
   if (tempDir) {
@@ -181,62 +179,32 @@ describe("local api", () => {
     }
   });
 
-  it("keeps send-code available when the installation id cannot be read", async () => {
-    const previousCloudUrl = process.env.MEMMY_CLOUD_URL;
-    let deviceId: string | undefined;
+  it("keeps register/login available when the installation id cannot be read", async () => {
     tempDir = mkdtempSync(join(tmpdir(), "memmy-backend-device-id-unavailable-"));
     const databasePath = join(tempDir, "app.sqlite");
     const preparedStore = createAppStateStore({ databasePath });
     preparedStore.db.exec("ALTER TABLE app_settings DROP COLUMN installation_id");
     preparedStore.close();
+    await startMockCuberouterServer();
 
-    integrationServer = createServer(async (request, response) => {
-      if (
-        request.method === "POST" &&
-        request.url === "/api/agentUser/sendEmailVerification"
-      ) {
-        deviceId = request.headers["x-memmy-device-id"] as string | undefined;
-        sendJson(response, { code: 0, message: "ok", data: true });
-        return;
-      }
-
-      sendJson(response, { code: 40000, message: "not found", data: null }, 404);
+    backend = await createLocalBackend({
+      databasePath,
+      runtimeConfigPath: join(tempDir, "runtime.json"),
+      localToken: "test-token",
+      memoryClient: createMockMemoryClient(),
+      memmyConfigPath: join(tempDir, "config.yaml")
     });
-    await listen(integrationServer);
-    const address = integrationServer.address();
-    if (!address || typeof address === "string") {
-      throw new Error("Mock Cloud server did not bind to a port");
-    }
-    process.env.MEMMY_CLOUD_URL = `http://127.0.0.1:${address.port}`;
 
-    try {
-      backend = await createLocalBackend({
-        databasePath,
-        runtimeConfigPath: join(tempDir, "runtime.json"),
-        localToken: "test-token",
-        memoryClient: createMockMemoryClient(),
-        memmyConfigPath: join(tempDir, "config.yaml")
-      });
+    const response = await postAccountCredentials("/api/account/register", {
+      username: "alice",
+      password: "Passw0rd1"
+    });
 
-      const response = await fetch(`${backend.runtimeConfig.baseUrl}/api/account/send-code`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-memmy-local-token": "test-token"
-        },
-        body: JSON.stringify({
-          channel: "email",
-          email: "hello@example.com",
-          locale: "zh"
-        })
-      });
-
-      expect(response.status).toBe(200);
-      await expect(response.json()).resolves.toEqual({ ok: true, resendAfterSec: 60 });
-      expect(deviceId).toBeUndefined();
-    } finally {
-      restoreOptionalEnv("MEMMY_CLOUD_URL", previousCloudUrl);
-    }
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      session: { authenticated: true, profile: { identityProvider: "cuberouter" } },
+      provisioning: { apiKey: "sk-cuberouter", model: "deepseek-flash" }
+    });
   });
 
   it("fails fast when no HTTP Memory Layer is configured", async () => {
@@ -697,20 +665,12 @@ describe("local api", () => {
 
   it("exposes integrations capabilities/authorize/list/delete routes", async () => {
     const cloudClient = createRecordingCloudClient();
+    await startMockCuberouterServer();
     backend = await createTempBackend({ cloudClient });
 
-    const loginResponse = await fetch(`${backend.runtimeConfig.baseUrl}/api/account/verify-code`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-memmy-local-token": "test-token"
-      },
-      body: JSON.stringify({
-        channel: "email",
-        email: "dev@example.com",
-        verificationCode: "123456",
-        loginSource: "Memmy"
-      })
+    const loginResponse = await postAccountCredentials("/api/account/login", {
+      username: "alice",
+      password: "Passw0rd1"
     });
     const capabilitiesResponse = await fetch(`${backend.runtimeConfig.baseUrl}/api/v1/integrations/capabilities`, {
       method: "GET",
@@ -781,20 +741,12 @@ describe("local api", () => {
 
   it("byok integrations routes still proxy through Cloud Service when account session exists", async () => {
     const cloudClient = createRecordingCloudClient();
+    await startMockCuberouterServer();
     backend = await createTempBackend({ cloudClient });
 
-    const loginResponse = await fetch(`${backend.runtimeConfig.baseUrl}/api/account/verify-code`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-memmy-local-token": "test-token"
-      },
-      body: JSON.stringify({
-        channel: "email",
-        email: "dev@example.com",
-        verificationCode: "123456",
-        loginSource: "Memmy"
-      })
+    const loginResponse = await postAccountCredentials("/api/account/login", {
+      username: "alice",
+      password: "Passw0rd1"
     });
     const currentModelConfigResponse = await fetch(`${backend.runtimeConfig.baseUrl}/api/app/model-config`, {
       method: "GET",
@@ -959,7 +911,6 @@ describe("local api", () => {
 
   it("default integrations routes proxy capabilities/authorize/list/delete to Cloud Service with machine token", async () => {
     const previousCloudUrl = process.env.MEMMY_CLOUD_URL;
-    let loginDeviceId: string | undefined;
     const requests: Array<{
       method?: string;
       url?: string;
@@ -978,23 +929,6 @@ describe("local api", () => {
         authorization: request.headers.authorization,
         machineComposioToken: request.headers["x-memmy-composio-token"] as string | undefined
       });
-
-      if (request.method === "POST" && request.url === "/api/agentUser/login") {
-        loginDeviceId = request.headers["x-memmy-device-id"] as string | undefined;
-        sendJson(response, {
-          code: 0,
-          message: "ok",
-          data: {
-            id: "cloud-user-1",
-            email: "dev@example.com",
-            userName: "dev",
-            planType: "free",
-            hasFinishedGuide: true,
-            uuid: "cloud.login.uuid"
-          }
-        });
-        return;
-      }
 
       if (request.method === "GET" && request.url === "/api/agentUser/info") {
         sendJson(response, {
@@ -1075,6 +1009,7 @@ describe("local api", () => {
       throw new Error("Mock integrations server did not bind to a port");
     }
     process.env.MEMMY_CLOUD_URL = `http://127.0.0.1:${address.port}`;
+    await startMockCuberouterServer();
     const memmyConfigPath = join(tempDir, "config.yaml");
 
     try {
@@ -1086,18 +1021,9 @@ describe("local api", () => {
         memmyConfigPath
       });
 
-      const loginResponse = await fetch(`${backend.runtimeConfig.baseUrl}/api/account/verify-code`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-memmy-local-token": "test-token"
-        },
-        body: JSON.stringify({
-          channel: "email",
-          email: "dev@example.com",
-          verificationCode: "123456",
-          loginSource: "Memmy"
-        })
+      const loginResponse = await postAccountCredentials("/api/account/login", {
+        username: "alice",
+        password: "Passw0rd1"
       });
       const capabilitiesResponse = await fetch(`${backend.runtimeConfig.baseUrl}/api/v1/integrations/capabilities`, {
         method: "GET",
@@ -1125,12 +1051,6 @@ describe("local api", () => {
       });
 
       expect(loginResponse.status).toBe(200);
-      expect(readFileSync(memmyConfigPath, "utf8")).toContain(
-        "https://cloud.test.invalid/api/agentExternal/v1"
-      );
-      expect(loginDeviceId).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-      );
       expect(capabilitiesResponse.status).toBe(200);
       await expect(capabilitiesResponse.json()).resolves.toEqual({ toolkits: ["airtable"] });
       expect(response.status).toBe(200);
@@ -1221,6 +1141,109 @@ describe("local api", () => {
     ]);
   });
 });
+
+/**
+ * Starts a mock cuberouter server and points the local backend at it.
+ *
+ * The register/login routes reach cuberouter over HTTP, so integration tests that need an
+ * authenticated account session have to serve that transport, exactly like the memmy cloud
+ * mocks above.
+ *
+ * @returns The base URL the mock is listening on.
+ */
+async function startMockCuberouterServer(): Promise<string> {
+  cuberouterServer = createServer(async (request, response) => {
+    if (request.method === "POST" && request.url === "/api/user/register") {
+      sendJson(response, { success: true, message: "ok", data: {} });
+      return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/user/login") {
+      const body = await readJson(request) as { username?: string };
+      sendJson(response, {
+        success: true,
+        message: "ok",
+        data: {
+          access_token: "cuberouter-jwt",
+          user: { id: 7, username: body.username ?? "alice", display_name: "Alice" }
+        }
+      });
+      return;
+    }
+
+    if (request.method === "GET" && request.url === "/api/token/?p=1&page_size=100") {
+      sendJson(response, {
+        success: true,
+        message: "ok",
+        data: { items: [{ id: 11, name: "memmy-desktop" }] }
+      });
+      return;
+    }
+
+    if (request.method === "POST" && request.url === "/api/token/11/key") {
+      sendJson(response, { success: true, message: "ok", data: { key: "sk-cuberouter" } });
+      return;
+    }
+
+    sendJson(response, { success: false, message: "not found", data: null }, 404);
+  });
+  await listen(cuberouterServer);
+
+  const address = cuberouterServer.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Mock cuberouter server did not bind to a port");
+  }
+
+  previousCuberouterUrl = process.env.MEMMY_CUBEROUTER_URL;
+  cuberouterUrlWasSet = true;
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  process.env.MEMMY_CUBEROUTER_URL = baseUrl;
+  return baseUrl;
+}
+
+/**
+ * Signs in through the local register/login route.
+ *
+ * @param path Account route path (`/api/account/login` or `/api/account/register`).
+ * @param body Request payload.
+ * @returns The route response.
+ */
+async function postAccountCredentials(path: string, body: Record<string, unknown>): Promise<Response> {
+  if (!backend) {
+    throw new Error("Test backend is not initialized");
+  }
+
+  return fetch(`${backend.runtimeConfig.baseUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-memmy-local-token": "test-token"
+    },
+    body: JSON.stringify(body)
+  });
+}
+
+/**
+ * Closes a test HTTP server.
+ *
+ * @param serverToClose The server to close; undefined is a no-op.
+ */
+function closeServer(serverToClose: ReturnType<typeof createServer> | undefined): Promise<void> {
+  if (!serverToClose) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    serverToClose.close((error) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
 
 async function createTempBackend(
   options: {

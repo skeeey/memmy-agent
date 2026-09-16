@@ -206,6 +206,34 @@ describe("syncRuntimeConfigWithAppState", () => {
     expect(context.store.repositories.accountSession.get()).toEqual({ authenticated: false });
   });
 
+  it("keeps a cuberouter session when the desktop package reports a verification channel", async () => {
+    const context = createContext();
+    context.store.repositories.accountSession.upsert({
+      profile: {
+        userId: "7", email: null, phoneNumber: null, nickname: "Alice", avatarUrl: null,
+        planType: null, hasFinishedGuide: null, region: null, registeredAt: null,
+        identityProvider: "cuberouter",
+        rawProfile: { username: "alice", displayName: "Alice" }
+      },
+      uuid: "cuberouter:7",
+      cloudUuid: "cuberouter-jwt",
+      isNewUser: true,
+      authChannel: "cuberouter"
+    });
+
+    const result = await syncRuntimeConfigWithAppState({
+      ...context,
+      accountChannel: "phone"
+    });
+
+    expect(result.reason).not.toBe("account_session_channel_mismatch");
+    expect(context.store.repositories.accountSession.get()).toMatchObject({
+      authenticated: true,
+      profile: { userId: "7", identityProvider: "cuberouter" }
+    });
+    expect(context.store.repositories.accountSession.getCloudUuid()).toBe("cuberouter-jwt");
+  });
+
   it("clears a mismatched active session even when the account projection is already incomplete", async () => {
     const context = createContext();
     context.store.repositories.accountSession.upsert({

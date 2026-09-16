@@ -97,6 +97,7 @@ export function createLocalApiServer(options: CreateLocalApiServerOptions): Fast
   registerAccountRoutes(app, {
     account: options.services.account,
     appConfig: options.services.appConfig,
+    cuberouterAccount: options.services.cuberouterAccount,
     authenticateRuntimeToken
   });
   registerTokenQuotaRoutes(app, {

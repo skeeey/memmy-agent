@@ -28,369 +28,96 @@ function createAccountService(options: TestAccountServiceOptions) {
 }
 
 describe("AccountService", () => {
-  it("rejects verification channels that are not supported by the desktop package", async () => {
-    let cloudCalls = 0;
-    const service = createAccountService({
-      accountChannel: "phone",
-      cloudClient: {
-        ...createCloudClientStub(),
-        async sendEmailCode() {
-          cloudCalls += 1;
-        },
-        async login() {
-          cloudCalls += 1;
-          throw new Error("unexpected cloud login");
-        }
-      },
-      accountSessionRepository: createAccountSessionRepositoryStub()
-    });
-
-    await expect(service.sendCode({
-      channel: "email",
-      email: "hello@example.com",
-      locale: "zh"
-    })).rejects.toMatchObject({ code: "invalid_argument" });
-    await expect(service.verifyCode({
-      channel: "email",
-      email: "hello@example.com",
-      verificationCode: "123456",
-      loginSource: "Memmy"
-    })).rejects.toMatchObject({ code: "invalid_argument" });
-    expect(cloudCalls).toBe(0);
-  });
-
-  it("sends verification codes through cloud-client and rate-limits by channel address", async () => {
-    const calls: string[] = [];
-    let lastCodeSentAt: string | null = null;
-    const service = createAccountService({
-      now: () => new Date("2026-06-02T10:00:00.000Z"),
-      cloudClient: {
-        ...createCloudClientStub(),
-        async sendEmailCode(input) {
-          calls.push(`email:${input.email}:${input.zhEnv}`);
-        }
-      },
-      accountSessionRepository: {
-        ...createAccountSessionRepositoryStub(),
-        getLastCodeSentAt() {
-          return lastCodeSentAt;
-        },
-        markCodeSent(_key, at) {
-          lastCodeSentAt = at;
-          calls.push(`mark:${at}`);
-        }
-      }
-    });
-
-    await expect(service.sendCode({ channel: "email", email: "hello@example.com", locale: "zh" })).resolves.toEqual({
-      ok: true,
-      resendAfterSec: 60
-    });
-
-    lastCodeSentAt = "2026-06-02T09:59:45.000Z";
-    await expect(service.sendCode({ channel: "email", email: "hello@example.com", locale: "zh" })).resolves.toEqual({
-      ok: true,
-      resendAfterSec: 45
-    });
-
-    expect(calls).toEqual(["email:hello@example.com:true", "mark:2026-06-02T10:00:00.000Z"]);
-  });
-
-  it("passes locale as zhEnv for email and phone verification templates", async () => {
-    const calls: string[] = [];
-    const service = createAccountService({
-      now: () => new Date("2026-06-02T10:00:00.000Z"),
-      cloudClient: {
-        ...createCloudClientStub(),
-        async sendEmailCode(input) {
-          calls.push(`email:${input.email}:${input.zhEnv}`);
-        },
-        async sendPhoneCode(input) {
-          calls.push(`phone:${input.phoneNumber}:${input.zhEnv}`);
-        }
-      },
-      accountSessionRepository: {
-        ...createAccountSessionRepositoryStub(),
-        getLastCodeSentAt() {
-          return null;
-        },
-        markCodeSent(_key, at) {
-          calls.push(`mark:${at}`);
-        }
-      }
-    });
-
-    await expect(service.sendCode({ channel: "email", email: "hello@example.com", locale: "en" })).resolves.toEqual({
-      ok: true,
-      resendAfterSec: 60
-    });
-    await expect(service.sendCode({ channel: "phone", phoneNumber: "13800138000", locale: "zh" })).resolves.toEqual({
-      ok: true,
-      resendAfterSec: 60
-    });
-
-    expect(calls).toEqual([
-      "email:hello@example.com:false",
-      "mark:2026-06-02T10:00:00.000Z",
-      "phone:13800138000:true",
-      "mark:2026-06-02T10:00:00.000Z"
-    ]);
-  });
-
-  it("logs in through cloud-client and stores uuid through account session repository", async () => {
-    const calls: unknown[] = [];
-    const service = createAccountService({
-      now: () => new Date("2026-06-02T10:00:00.000Z"),
-      cloudClient: {
-        ...createCloudClientStub(),
-        async login(input) {
-          calls.push({ login: input });
-          return {
-            uuid: "cloud.login.uuid",
-            accountUuid: "cloud-account-user-1",
-            isNewUser: true,
-            profile: cloudProfile(),
-            invitationResult: {
-              status: "success" as const,
-              inviteeRewardTokens: 500_000
-            }
-          };
-        }
-      },
-      accountSessionRepository: {
-        ...createAccountSessionRepositoryStub(),
-        upsert(input) {
-          calls.push({ upsert: input });
-          return {
-            authenticated: true,
-            isNewUser: true,
-            profile: {
-              userId: input.profile.userId,
-              email: input.profile.email,
-              phoneNumber: input.profile.phoneNumber,
-              nickname: input.profile.nickname,
-              avatarUrl: input.profile.avatarUrl,
-              planType: input.profile.planType,
-              hasFinishedGuide: input.profile.hasFinishedGuide,
-              region: input.profile.region,
-              registeredAt: input.profile.registeredAt
-            }
-          };
-        }
-      }
-    });
-
-    const result = await service.verifyCode({
-      channel: "email",
-      email: "hello@example.com",
-      verificationCode: "123456",
-      loginSource: "Memmy",
-      invitationCode: "MEMMY-A1B2C3"
-    });
-
-    expect(result).toMatchObject({
-      session: {
-        authenticated: true,
-        isNewUser: true,
-        profile: {
-          email: "hello@example.com",
-          nickname: "hello"
-        }
-      },
-      invitationResult: {
-        status: "success",
-        inviteeRewardTokens: 500_000
-      }
-    });
-    expect(JSON.stringify(result)).not.toContain("cloud.login.uuid");
-    expect(calls).toEqual([
-      {
-        login: {
-          email: "hello@example.com",
-          verificationCode: "123456",
-          loginSource: "Memmy",
-          invitationCode: "MEMMY-A1B2C3"
-        }
-      },
-      {
-        upsert: {
-          profile: { ...cloudProfile(), identityProvider: "memmy_cloud" },
-          isNewUser: true,
-          uuid: "cloud-account-user-1",
-          cloudUuid: "cloud.login.uuid",
-          authChannel: "email"
-        }
-      },
-      {
-        upsert: {
-          profile: { ...cloudProfile(), identityProvider: "memmy_cloud" },
-          isNewUser: true
-        }
-      }
-    ]);
-  });
-
-  it("persists cloud login uuid into Memmy config before storing the local account session", async () => {
+  it("keeps a cuberouter session away from every memmy cloud account call", async () => {
     const calls: string[] = [];
     const service = createAccountService({
       cloudClient: {
         ...createCloudClientStub(),
-        async login() {
-          calls.push("login");
+        async ensureInvitationCode(input) {
+          calls.push(`cloud-invitation:${input.uuid}`);
           return {
-            uuid: "cloud.login.uuid",
-            accountUuid: "cloud-account-user-1",
-            isNewUser: true,
-            profile: cloudProfile()
-          };
-        }
-      },
-      accountSessionRepository: {
-        ...createAccountSessionRepositoryStub(),
-        upsert(input) {
-          calls.push(`upsert:${input.uuid ?? "no-uuid"}:${input.cloudUuid ?? "no-cloud-uuid"}`);
-          return {
-            authenticated: true,
-            isNewUser: input.isNewUser ?? null,
-            profile: input.profile
-          };
-        }
-      },
-      memmyConfigWriter: {
-        async writeAccountModelProjection(input) {
-          calls.push(`write:${input.cloudUuid ?? "no-cloud"}:${input.userId ?? "no-user"}`);
-        },
-        async writeByokModelProjection() {
-          calls.push("write-byok");
-        }
-      }
-    });
-
-    await expect(
-      service.verifyCode({
-        channel: "email",
-        email: "hello@example.com",
-        verificationCode: "123456",
-        loginSource: "Memmy"
-      })
-    ).resolves.toMatchObject({
-      session: {
-        authenticated: true,
-        profile: {
-          email: "hello@example.com"
-        }
-      },
-      invitationResult: { status: "not_provided" }
-    });
-    expect(calls).toEqual([
-      "login",
-      "write:cloud.login.uuid:user-1",
-      "upsert:cloud-account-user-1:cloud.login.uuid",
-      "upsert:no-uuid:no-cloud-uuid"
-    ]);
-  });
-
-  it("keeps cloud new-user judgment when the same registered account is first seen locally", async () => {
-    const service = createAccountService({
-      cloudClient: {
-        ...createCloudClientStub(),
-        async login() {
-          return {
-            uuid: "cloud.login.uuid",
-            accountUuid: "cloud-account-user-1",
-            isNewUser: false,
-            profile: cloudProfile()
-          };
-        }
-      },
-      accountSessionRepository: {
-        ...createAccountSessionRepositoryStub(),
-        upsert(input) {
-          return {
-            authenticated: true,
-            isNewUser: input.isNewUser ?? true,
-            profile: input.profile
-          };
-        }
-      }
-    });
-
-    await expect(
-      service.verifyCode({
-        channel: "email",
-        email: "hello@example.com",
-        verificationCode: "123456",
-        loginSource: "Memmy"
-      })
-    ).resolves.toMatchObject({
-      session: {
-        authenticated: true,
-        isNewUser: false,
-        profile: {
-          email: "hello@example.com"
-        }
-      },
-      invitationResult: { status: "not_provided" }
-    });
-  });
-
-  it("uses agentUser info after login to decide whether the current machine should show guide", async () => {
-    const calls: string[] = [];
-    const service = createAccountService({
-      cloudClient: {
-        ...createCloudClientStub(),
-        async login() {
-          calls.push("cloud-login");
-          return {
-            uuid: "cloud.login.uuid",
-            accountUuid: "cloud-account-user-1",
-            isNewUser: false,
-            profile: { ...cloudProfile(), hasFinishedGuide: true }
+            enabled: true,
+            invitationCode: "MEMMY-A1B2C3",
+            usedInviteSlotsToday: 1,
+            dailySuccessLimit: 5,
+            remainingInvitesToday: 4,
+            dailyLimitReached: false
           };
         },
         async getAccountInfo(input) {
           calls.push(`cloud-info:${input.uuid}`);
-          return { ...cloudProfile(), hasFinishedGuide: false };
+          return cloudProfile();
+        },
+        async updateAccountProfile(input) {
+          calls.push(`cloud-profile:${input.uuid}`);
         },
         async updateAccountGuide(input) {
-          calls.push(`cloud-update:${input.uuid}:${input.hasFinishedGuide}`);
+          calls.push(`cloud-guide:${input.uuid}:${input.hasFinishedGuide}`);
+        },
+        async logout(input) {
+          calls.push(`cloud-logout:${input.uuid}`);
         }
       },
       accountSessionRepository: {
         ...createAccountSessionRepositoryStub(),
-        upsert(input) {
-          calls.push(`local-upsert:${input.profile.hasFinishedGuide}:${input.cloudUuid ?? "no-cloud-uuid"}`);
+        get() {
           return {
-            authenticated: true,
-            isNewUser: input.isNewUser ?? false,
+            authenticated: true as const,
+            isNewUser: false,
+            profile: {
+              userId: "7",
+              email: null,
+              phoneNumber: null,
+              nickname: "Alice",
+              avatarUrl: null,
+              planType: null,
+              hasFinishedGuide: null,
+              region: null,
+              registeredAt: null,
+              identityProvider: "cuberouter" as const
+            }
+          };
+        },
+        getAuthChannel() {
+          return "cuberouter" as const;
+        },
+        getCloudUuid() {
+          return "cuberouter-jwt";
+        },
+        upsert(input) {
+          calls.push(`local-upsert:${input.profile.nickname}`);
+          return {
+            authenticated: true as const,
+            isNewUser: false,
             profile: input.profile
           };
+        },
+        clearIfCloudUuid(cloudUuid) {
+          calls.push(`local-clear:${cloudUuid}`);
+          return true;
         }
       }
     });
 
-    await expect(
-      service.verifyCode({
-        channel: "email",
-        email: "hello@example.com",
-        verificationCode: "123456",
-        loginSource: "Memmy"
-      })
-    ).resolves.toMatchObject({
-      session: {
-        authenticated: true,
-        profile: {
-          hasFinishedGuide: false
-        }
-      },
-      invitationResult: { status: "not_provided" }
+    await expect(service.getSession()).resolves.toMatchObject({
+      authenticated: true,
+      profile: { identityProvider: "cuberouter" }
     });
-    expect(calls).toEqual([
-      "cloud-login",
-      "local-upsert:true:cloud.login.uuid",
-      "cloud-info:cloud.login.uuid",
-      "local-upsert:false:no-cloud-uuid"
-    ]);
+    await expect(service.getInvitation()).resolves.toEqual({
+      enabled: false,
+      invitationCode: null,
+      usedInviteSlotsToday: 0,
+      dailySuccessLimit: 0,
+      remainingInvitesToday: 0,
+      dailyLimitReached: false
+    });
+    await expect(service.updateProfile({ nickname: "Memmy User" })).resolves.toMatchObject({
+      nickname: "Memmy User"
+    });
+    await expect(service.markGuideFinished()).resolves.toEqual({ ok: true });
+    await expect(service.logout()).resolves.toEqual({ ok: true });
+
+    expect(calls).toEqual(["local-upsert:Memmy User", "local-clear:cuberouter-jwt"]);
   });
 
   it("updates local profile, reads session, and logs out locally", async () => {
@@ -994,6 +721,9 @@ function createAccountSessionRepositoryStub() {
   return {
     get() {
       return { authenticated: false as const };
+    },
+    getAuthChannel() {
+      return null;
     },
     getCloudUuid() {
       return null;
