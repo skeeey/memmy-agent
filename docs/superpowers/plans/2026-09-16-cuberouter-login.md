@@ -15,7 +15,8 @@
 - 分支：`feat/cuberouter-login`（已存在，spec 已提交在此分支）。
 - 提交信息用仓库现有的 conventional commits 风格，例如 `feat(auth): ...`；每个任务至少一次提交。
 - **改了 `App/backend/local-api-contracts/src/index.ts` 之后，必须先 `npm run build -w @memmy/local-api-contracts`**——backend 与 desktop 都通过该 workspace 包的构建产物引用契约，不重建就看不到新增/变更的类型。
-- 后端测试命令：`npm --prefix App/backend exec vitest run <path>`（后端 `test` 脚本会先 build 三个 workspace 包；直接跑单文件更快，但改过契约时要先手动 build contracts，见上一条）。
+- 后端单文件测试：`npm --prefix App/backend exec vitest run <path>`（后端 `test` 脚本会先 build 三个 workspace 包；直接跑单文件更快，但改过契约时要先手动 build contracts，见上一条）。
+- **后端全量测试：`cd App/backend && npx vitest run`**。注意 `npm --prefix App/backend exec vitest run`（不带路径）**不会**跑后端套件——它会在 monorepo 根收集、没有 config，产生数百个无关失败（Task 4 实测：BASE 上同样红）。
 - 桌面测试命令：`npm --prefix App/frontend/desktop exec vitest run <path>`。
 - 类型检查：`npm --prefix App/backend run typecheck`、`npm --prefix App/frontend/desktop run typecheck`。
 - 后端测试文件放在源码旁的 `tests/` 子目录（例如 `src/services/tests/`），文件名 `<name>.test.ts`。
@@ -2117,7 +2118,7 @@ Expected: PASS。既有用例里凡是驱动验证码登录的（`settings-invit
 
 - [ ] **Step 7: 类型检查 + 后端测试**
 
-Run: `npm --prefix App/frontend/desktop run typecheck && npm --prefix App/backend exec vitest run src/services src/adapters`
+Run: `npm --prefix App/frontend/desktop run typecheck && cd App/backend && npx vitest run`
 Expected: PASS
 
 - [ ] **Step 8: 提交**
