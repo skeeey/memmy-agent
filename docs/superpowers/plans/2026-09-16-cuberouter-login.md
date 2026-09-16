@@ -1723,7 +1723,7 @@ git commit -m "feat(auth): replace verification-code form with cuberouter creden
 **Interfaces:**
 - Consumes: Task 5 的 `useAccountAuth`/`AuthCredentialsForm`；Task 3 的 `CuberouterAuthResult.provisioning`；既有 `upsertByokPreset`/`assignCatalogPreset`/`modelConfigInput`/`createModelWorkspace`（`state/model-workspace.ts`）、`persistLoginModeSelection`（`app/login-mode.ts`）。
 - Produces:
-  - `provisionByokModel(input: { configClient: ConfigClient; endpoint: { apiBase: string; protocol: ModelEndpointProtocol; apiKey: string }; model: string; capabilities: ModelCapability[]; assign: ModelCapability[] }): Promise<void>`
+  - `provisionByokModel(input: { configClient: ConfigClient; endpoint: { apiBase: string; protocol: ModelEndpointProtocol; apiKey: string }; model: string; capabilities: ModelCapability[]; assign: ModelCapability[] }): Promise<ModelProviderConfig>`（返回写回后的目录，调用方不必再读一次；内部按 apiBase+protocol 复用既有 endpoint，保证重复登录幂等）
   - `AccountAuthPanel`（页面内共用面板，自带续接逻辑）
 
 **关键约束：** `provisionByokModel` 的调用方各自决定能力集——注册链路传 `capabilities: ["agent","memory_summary","memory_evolution"]` 且 `assign` 同这三项；`api-key-page.tsx` 保持 `["agent"]` + `assign: ["agent"]`，其 embedding 分支不动。
@@ -1842,12 +1842,19 @@ export interface ProvisionByokModelInput {
  *
  * @param input the endpoint, model, capabilities and assignment slots.
  */
-export async function provisionByokModel(input: ProvisionByokModelInput): Promise<void> {
+export async function provisionByokModel(input: ProvisionByokModelInput): Promise<ModelProviderConfig> {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const latest = await input.configClient.getModelConfig();
     let workspace = createModelWorkspace(latest);
+    // 服务端返回的 endpoint 恒不带 apiKey（只给 apiKeyMasked），而 `upsertByokPreset`
+    // 复用 endpoint 的判据里含明文 key 比对，因此它永远配不上既有 endpoint：
+    // 直接写会每次登录都新增一个同 apiBase+protocol 的 endpoint，被后端的
+    // validateEndpointDefinitions 判重拒绝（invalid_argument），用户就卡在认证页。
+    // 所以先按 apiBase+protocol 自己找出既有 endpoint，显式复用。
+    const existingEndpointId = findExistingEndpointId(workspace, input.endpoint);
     const preset = upsertByokPreset(workspace, {
       provider: PROVIDER_ID,
+      ...(existingEndpointId ? { endpointId: existingEndpointId } : {}),
       endpoint: input.endpoint.apiBase,
       protocol: input.endpoint.protocol,
       apiKey: input.endpoint.apiKey,
@@ -1860,8 +1867,9 @@ export async function provisionByokModel(input: ProvisionByokModelInput): Promis
     }
 
     try {
-      await input.configClient.saveModelCatalog(modelConfigInput(workspace));
-      return;
+      // 把写回后的目录返回给调用方，省掉一次 getModelConfig 读——那次读同样会抛错，
+      // 而它一旦抛错就会把已经写成功的用户又卡在认证页（评审 Important #2）。
+      return await input.configClient.saveModelCatalog(modelConfigInput(workspace));
     } catch (error) {
       const code = error && typeof error === "object" && "code" in error ? (error as { code?: string }).code : undefined;
       if (attempt === 1 || (code !== "model_config_changed" && code !== "config_write_busy")) {
@@ -1869,6 +1877,22 @@ export async function provisionByokModel(input: ProvisionByokModelInput): Promis
       }
     }
   }
+
+  throw new Error("unreachable: provisionByokModel retried without resolving");
+}
+
+/** Finds an existing BYOK endpoint with the same normalised apiBase and protocol. */
+function findExistingEndpointId(
+  workspace: ModelWorkspace,
+  endpoint: ProvisionByokModelInput["endpoint"]
+): string | undefined {
+  const apiBase = endpoint.apiBase.trim().replace(/\/+$/, "");
+  const provider = workspace.catalog.providers.find(
+    (item) => item.provider === PROVIDER_ID && !item.accountManaged
+  );
+  return provider?.endpoints.find(
+    (item) => item.apiBase.replace(/\/+$/, "") === apiBase && item.protocol === endpoint.protocol
+  )?.endpointId;
 }
 ```
 
@@ -1911,9 +1935,17 @@ export function AccountAuthPanel() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [continuing, setContinuing] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
+  // 已认证但未完成续接的结果；用于让重试只重跑"选模式 + 跳转"。
+  const [pendingAuthResult, setPendingAuthResult] = useState<CuberouterAuthResult | null>(null);
 
   async function submit() {
     if (auth.pending || continuing) return;
+    // 已经通过认证、但后续（选模式/跳转）失败的用户：重试只续接那一段。
+    // 否则重试会重新注册同一个用户名，直接撞 "用户已存在" 而无法恢复。
+    if (pendingAuthResult) {
+      await continueAfterAuth(pendingAuthResult);
+      return;
+    }
     setWarning(null);
     const result = mode === "register"
       ? await auth.register(username, password, confirmPassword)
@@ -1942,7 +1974,7 @@ export function AccountAuthPanel() {
 
     try {
       setContinuing(true);
-      await provisionByokModel({
+      const saved = await provisionByokModel({
         configClient: clients.config,
         endpoint: {
           apiBase: result.provisioning.apiBase,
@@ -1953,7 +1985,6 @@ export function AccountAuthPanel() {
         capabilities: ["agent", "memory_summary", "memory_evolution"],
         assign: ["agent", "memory_summary", "memory_evolution"]
       });
-      const saved = await clients.config.getModelConfig();
       dispatch(appActions.modelConfigUpdated(saved));
 
       // 自检必须单独兜底：它既可能返回 { ok: false }（配额为 0、模型不在能力表里），
@@ -1994,12 +2025,15 @@ export function AccountAuthPanel() {
         userMode: "byok",
         onboarding: onboardingPatch
       });
+      setPendingAuthResult(null);
       // 自检警告不影响路由：新用户走 onboarding，老用户按 guide 状态进主界面。
       dispatch(appActions.navigate(
         resolvePostLoginRoute({ onboarding: nextOnboarding, preferredMode: state.navigation.preferredMode })
       ));
     } catch (error) {
       console.error("persist byok mode failed", error);
+      // 留住这次认证结果：模型配置已经写好，重试只该重跑这一段。
+      setPendingAuthResult(result);
       auth.setFailure({ text: t("login.error.modePersistenceFailed"), tone: "error" });
     } finally {
       setContinuing(false);
@@ -2014,7 +2048,7 @@ export function AccountAuthPanel() {
         password={password}
         confirmPassword={mode === "register" ? confirmPassword : undefined}
         disabled={auth.pending || continuing}
-        feedback={warning ? { text: warning, tone: "error" } : auth.feedback}
+        feedback={auth.feedback ?? (warning ? { text: warning, tone: "error" } : null)}
         onUsernameChange={setUsername}
         onPasswordChange={setPassword}
         onConfirmPasswordChange={setConfirmPassword}
