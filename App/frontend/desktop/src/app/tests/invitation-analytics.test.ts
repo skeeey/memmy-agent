@@ -10,6 +10,7 @@ describe("invitation analytics", () => {
     expect(buildInvitationSignupEvent({
       channel: "email",
       isNewUser: true,
+      userMode: "account",
       invitationCode: " MEMMY-A1B2C3 "
     })).toEqual({
       name: "signup_completed",
@@ -25,8 +26,26 @@ describe("invitation analytics", () => {
     expect(buildInvitationSignupEvent({
       channel: "phone",
       isNewUser: false,
+      userMode: "account",
       invitationCode: "   "
     }).params.invite_code_provided).toBe(false);
+  });
+
+  it("reports the cuberouter signup path with the mode it selects", () => {
+    expect(buildInvitationSignupEvent({
+      channel: "cuberouter",
+      isNewUser: true,
+      userMode: "byok"
+    })).toEqual({
+      name: "signup_completed",
+      params: {
+        method: "cuberouter",
+        is_new_user: true,
+        user_mode: "byok",
+        invite_code_provided: false
+      },
+      consentTier: "basic"
+    });
   });
 
   it("maps only displayable invitation results to toast events", () => {

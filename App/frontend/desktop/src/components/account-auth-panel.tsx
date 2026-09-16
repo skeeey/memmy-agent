@@ -2,6 +2,8 @@
 import type { CuberouterAuthResult, OnboardingStateDto } from "@memmy/local-api-contracts";
 import { useState } from "react";
 import { setAnalyticsUserId } from "../analytics/analytics-context.js";
+import { useAnalytics } from "../analytics/use-analytics.js";
+import { buildInvitationSignupEvent } from "../app/invitation-analytics.js";
 import { persistLoginModeSelection } from "../app/login-mode.js";
 import { useApiClients } from "../app/providers.js";
 import { buildAccountOnboardingStartPatch, resolvePostLoginRoute } from "../app/routes.js";
@@ -18,6 +20,7 @@ import { useAccountAuth } from "./use-account-auth.js";
 export function AccountAuthPanel() {
   const { state, dispatch } = useAppState();
   const { clients } = useApiClients();
+  const { track } = useAnalytics();
   const { t, language } = useTranslation();
   const auth = useAccountAuth();
   const [mode, setMode] = useState<"register" | "login">("register");
@@ -45,7 +48,15 @@ export function AccountAuthPanel() {
     const result = mode === "register"
       ? await auth.register(username, password, confirmPassword)
       : await auth.login(username, password);
-    if (!result) return;
+    if (!result || !result.session.authenticated) return;
+    setAnalyticsUserId(result.session.profile.userId);
+    // Emitted once per authentication, never on a continuation retry, and it describes this
+    // flow: the method is the cuberouter identity and the mode the panel selects is BYOK.
+    track(buildInvitationSignupEvent({
+      channel: "cuberouter",
+      isNewUser: result.session.isNewUser === true,
+      userMode: "byok"
+    }));
     await continueAfterAuth(result);
   }
 
@@ -53,7 +64,6 @@ export function AccountAuthPanel() {
     const session = result.session;
     if (!session.authenticated) return;
 
-    setAnalyticsUserId(session.profile.userId);
     dispatch(appActions.accountUpdated({
       userId: session.profile.userId,
       email: session.profile.email ?? "",

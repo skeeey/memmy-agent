@@ -9,9 +9,11 @@ import type {
 export type TrackAnalyticsEvent = (event: AnalyticsEvent) => void;
 
 export interface InvitationSignupEventInput {
-  /** The verification-code path is the only signup path that reports this event; cuberouter signups never do. */
-  channel: "email" | "phone";
+  /** How the account was created: a contact channel, or the cuberouter register/login flow. */
+  channel: "email" | "phone" | "cuberouter";
   isNewUser: boolean;
+  /** The user mode this signup lands on; the cuberouter panel always selects BYOK. */
+  userMode: "account" | "byok";
   invitationCode?: string;
 }
 
@@ -24,7 +26,7 @@ export function buildInvitationSignupEvent(
     params: {
       method: input.channel,
       is_new_user: input.isNewUser,
-      user_mode: "account",
+      user_mode: input.userMode,
       invite_code_provided: Boolean(input.invitationCode?.trim())
     },
     consentTier: "basic"

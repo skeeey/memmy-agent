@@ -217,7 +217,7 @@ describe("auth flow pages", () => {
     const modeIndex = panel.indexOf("await persistLoginModeSelection({");
     const navigateIndex = panel.indexOf("dispatch(appActions.navigate(");
 
-    expect(panel).toContain("if (!result) return;");
+    expect(panel).toContain("if (!result || !result.session.authenticated) return;");
     expect(loginIndex).toBeGreaterThanOrEqual(0);
     expect(provisionIndex).toBeGreaterThan(loginIndex);
     expect(modeIndex).toBeGreaterThan(provisionIndex);

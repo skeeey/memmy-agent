@@ -17,7 +17,8 @@ import { AccountAuthPanel } from "../account-auth-panel.js";
 const mocks = vi.hoisted(() => ({
   clients: null as AppClients | null,
   state: null as AppState | null,
-  dispatch: vi.fn()
+  dispatch: vi.fn(),
+  track: vi.fn()
 }));
 
 vi.mock("../../app/providers.js", () => ({
@@ -30,6 +31,10 @@ vi.mock("../../state/app-state.js", () => ({
 
 vi.mock("../../i18n/use-translation.js", () => ({
   useTranslation: () => ({ t: (key: string) => key, language: "zh-CN" })
+}));
+
+vi.mock("../../analytics/use-analytics.js", () => ({
+  useAnalytics: () => ({ track: mocks.track, ready: true })
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -111,6 +116,36 @@ describe("AccountAuthPanel auth error copy", () => {
     // The persisted patch must not carry the new-user onboarding reset: doing so would
     // survive restarts and send the returning user through onboarding again.
     expect(updateOnboarding).toHaveBeenCalledWith({});
+  });
+
+  it("reports a cuberouter signup with the identity and the mode the panel selects", async () => {
+    mocks.clients = {
+      account: { register: vi.fn(async () => authResult({ isNewUser: true })) },
+      config: {
+        getModelConfig: vi.fn(async () => emptyProviderConfig()),
+        saveModelCatalog: vi.fn(async () => emptyProviderConfig()),
+        testModelConfig: vi.fn(async () => ({ ok: true, message: "ok", checkedAt: "2026-09-16T00:00:00.000Z" })),
+        updateSettings: vi.fn(async (settings: unknown) => settings),
+        updateOnboarding: vi.fn(async (onboarding: unknown) => onboarding)
+      }
+    } as unknown as AppClients;
+
+    await act(async () => root.render(<AccountAuthPanel />));
+    await fillInput(0, "alice");
+    await fillInput(1, "Passw0rd1");
+    await fillInput(2, "Passw0rd1");
+    await clickButton("account.register");
+
+    await vi.waitFor(() => expect(mocks.track).toHaveBeenCalledWith({
+      name: "signup_completed",
+      params: {
+        method: "cuberouter",
+        is_new_user: true,
+        user_mode: "byok",
+        invite_code_provided: false
+      },
+      consentTier: "basic"
+    }));
   });
 
   it("keeps the registered user moving when the model self-check itself throws", async () => {
