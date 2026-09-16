@@ -121,7 +121,7 @@ describe("cuberouter account service", () => {
     });
   });
 
-  it("maps transport failures to internal while keeping the message", async () => {
+  it("maps transport failures to a code the desktop renders while keeping the message", async () => {
     const client = fakeClient({
       login: vi.fn(async () => {
         throw Object.assign(new Error("无法连接 cuberouter 服务"), { code: "service_unavailable" });
@@ -136,7 +136,7 @@ describe("cuberouter account service", () => {
     });
 
     await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
-      code: "internal",
+      code: "cuberouter_unavailable",
       message: "无法连接 cuberouter 服务"
     });
   });

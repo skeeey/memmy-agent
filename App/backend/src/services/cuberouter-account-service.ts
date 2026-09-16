@@ -7,7 +7,10 @@ import type { ApiErrorCode } from "./error-envelope.js";
 const CUBEROUTER_ERROR_CODES: Record<CuberouterErrorCode, ApiErrorCode> = {
   two_factor_required: "invalid_argument",
   rejected: "invalid_argument",
-  service_unavailable: "internal"
+  // Transport failures keep their own code rather than folding into "internal": the desktop
+  // renders business messages only for codes it knows, so "internal" would swallow the
+  // "cannot reach cuberouter" copy that the spec promises on the most likely failure.
+  service_unavailable: "cuberouter_unavailable"
 };
 
 /**

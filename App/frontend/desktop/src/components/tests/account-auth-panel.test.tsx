@@ -79,6 +79,13 @@ describe("AccountAuthPanel auth error copy", () => {
     expect(alertText()).toBe("account.error.requestFailed");
   });
 
+  it("shows the transport message the spec promises when cuberouter is unreachable", async () => {
+    const message = "无法连接 cuberouter 服务，请检查服务地址与网络";
+    await submitFailingLogin(new ApiRequestError(message, 503, "cuberouter_unavailable"));
+
+    expect(alertText()).toBe(message);
+  });
+
   it("keeps the registered user moving when the model self-check itself throws", async () => {
     const updateSettings = vi.fn(async (settings) => settings);
     const saveModelCatalog = vi.fn(async () => emptyProviderConfig());

@@ -923,6 +923,7 @@ export const ApiErrorCodeSchema = z.enum([
   "rate_limited",
   "internal",
   "memory_layer_unavailable",
+  "cuberouter_unavailable",
   "missing_idempotency_key",
   "idempotency_body_mismatch",
   "scan_not_permitted",
