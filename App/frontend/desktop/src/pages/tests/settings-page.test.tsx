@@ -869,6 +869,17 @@ describe("SettingsPageView", () => {
     expect(source).toContain("appActions.accountCleared()");
   });
 
+  it("cuberouter 登录后 byok 模式下同样提供退出登录入口", () => {
+    const html = normalizeSsrHtml(renderSettingsPageView(createByokModeSignedInState()));
+    const source = readFileSync(settingsPageSourcePath, "utf8");
+
+    expect(html).toContain("退出登录");
+    // The logout entry follows the session instead of the mode, so the login prompt is not
+    // offered alongside it.
+    expect(html).not.toContain("登录 / 注册");
+    expect(source).toContain("const isSignedIn = Boolean(state.account.userId)");
+  });
+
   it("退出登录后刷新 canonical 配置，并按实际 BYOK Agent 模型决定落点", async () => {
     const catalogWithUnselectedByokAgent = createCatalog(true);
     catalogWithUnselectedByokAgent.modelAssignments.byok.agent = { candidates: [], default: null };
@@ -1197,6 +1208,7 @@ function createAccountModeState(): AppState {
   const accountReady = appReducer(
     bootstrapped,
     appActions.accountUpdated({
+      userId: "memmy-cloud-user-1",
       nickname: "",
       email: "grace@example.com",
       phoneNumber: null,
@@ -1311,6 +1323,18 @@ function createByokModeState(): AppState {
   const settingsReady = appReducer(staleAccountReady, appActions.settingsUpdated({ defaultLaunchMode: "pet", userMode: "byok" }));
 
   return settingsReady;
+}
+
+/**
+ * Creates a BYOK mode settings page state with an authenticated cuberouter session.
+ *
+ * @returns A BYOK settings page state whose account session is signed in.
+ */
+function createByokModeSignedInState(): AppState {
+  return appReducer(
+    createByokModeState(),
+    appActions.accountUpdated({ userId: "cuberouter:7", identityProvider: "cuberouter" })
+  );
 }
 
 function createByokModeWithSavedModelState(): AppState {

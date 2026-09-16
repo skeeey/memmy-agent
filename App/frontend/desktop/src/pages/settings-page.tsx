@@ -468,6 +468,10 @@ export function SettingsPageView(props: SettingsPageViewProps) {
   const notificationSoundEnabled = appSettings?.notificationSoundEnabled ?? true;
   const improvementPlan = privacySettings?.allowMemoryImprovementUpload ?? false;
   const hasAccountSession = Boolean(state.account.email || state.account.phoneNumber || state.account.registeredAt);
+  // The logout entry follows the session, not the user mode. A cuberouter login persists
+  // "byok", so gating it on account mode left the only way to sign out unreachable and the
+  // JWT in the encrypted store forever.
+  const isSignedIn = Boolean(state.account.userId);
   const hasByokConfig = state.modelConfig.configured === true;
   const modelMode = resolveInitialModelMode(appSettings?.userMode);
   const modelModeLabel = t(modelMode === "platform" ? "settings.model.platformMode" : "settings.model.customMode");
@@ -1351,7 +1355,7 @@ export function SettingsPageView(props: SettingsPageViewProps) {
                 </div>
               </div>
             </div>
-            {isAccountMode && (
+            {isSignedIn && (
               <button
                 type="button"
                 onClick={() => setConfirm("logout")}
@@ -1361,7 +1365,7 @@ export function SettingsPageView(props: SettingsPageViewProps) {
                 <LogOut size={12} /> {t("settings.logout")}
               </button>
             )}
-            {isByokMode && (
+            {isByokMode && !isSignedIn && (
               <button
                 type="button"
                 onClick={() => dispatch(appActions.navigate("/welcome"))}
