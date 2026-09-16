@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import YAML from "yaml";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createMemmyConfigWriter } from "../../infrastructure/memmy-config/index.js";
 import { createAsrService } from "../asr-service.js";
 
@@ -112,6 +112,37 @@ describe("asr service", () => {
       source: "account",
       transcribedAt: "2026-06-15T10:05:00.000Z"
     });
+    fixture.dispose();
+  });
+
+  it("cuberouter 会话不把 JWT 发往 memmy 云转写接口", async () => {
+    const fixture = catalogFixture("account");
+    const transcribeAudio = vi.fn();
+    const service = createAsrService({
+      bootstrapRepository: {
+        getAppSettings: () => ({ userMode: "account" })
+      },
+      accountSessionRepository: {
+        get: () => ({ authenticated: true, profile: { userId: "owner-a" } }) as any,
+        // The stored credential is a cuberouter JWT, not a memmy cloud uuid.
+        getCloudUuid: () => "cuberouter-jwt"
+      },
+      memmyConfigWriter: createMemmyConfigWriter({ configPath: fixture.configPath }),
+      cloudClient: { transcribeAudio } as never,
+      isCuberouterSession: () => true,
+      fetch: async () => {
+        throw new Error("direct fetch should not be used");
+      }
+    });
+
+    await expect(
+      service.transcribe({
+        audioBase64: "BASE64",
+        mimeType: "audio/webm",
+        durationMs: 800
+      })
+    ).rejects.toMatchObject({ code: "unauthorized" });
+    expect(transcribeAudio).not.toHaveBeenCalled();
     fixture.dispose();
   });
 

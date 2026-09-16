@@ -845,6 +845,35 @@ describe("AppConfigService", () => {
     ]);
   });
 
+  it("cuberouter 会话不把 JWT 发往 memmy 云的额度与赠送接口", async () => {
+    const calls: string[] = [];
+    const service = createAppConfigService({
+      bootstrapRepository: {
+        ...createBootstrapRepositoryStub(),
+        updateOnboarding: onboardingState,
+        updatePrivacy: privacySettings
+      },
+      accountSessionRepository: createAuthenticatedAccountSessionRepository(),
+      cloudClient: {
+        ...createCloudClientStub(),
+        async getTokenUsage(input) {
+          calls.push("getTokenUsage");
+          return tokenUsage();
+        },
+        async grantImprovementProgramTokens(input) {
+          calls.push("grantImprovementProgramTokens");
+          return tokenUsage();
+        }
+      },
+      isCuberouterSession: () => true
+    });
+
+    await expect(service.getTokenUsage()).rejects.toMatchObject({ code: "unauthorized" });
+    await expect(service.setImprovementProgram({ improvementProgram: "accepted" }))
+      .rejects.toMatchObject({ code: "unauthorized" });
+    expect(calls).toEqual([]);
+  });
+
   it("does not fall back to cached account token usage when the cloud request fails", async () => {
     const service = createAppConfigService({
       bootstrapRepository: createBootstrapRepositoryStub(),

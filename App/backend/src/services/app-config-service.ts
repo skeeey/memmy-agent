@@ -67,6 +67,12 @@ export interface CreateAppConfigServiceOptions {
   memmyConfigWriter?: MemmyConfigWriter;
   memoryClient?: Pick<MemoryClient, "reloadConfig">;
   scanPreferencesStore?: ScanPreferencesStore;
+  /**
+   * Whether the active session belongs to a cuberouter identity. Platform quota and the
+   * improvement-program grant are memmy cloud features: a cuberouter session holds a JWT the
+   * cloud cannot accept, so those calls are skipped instead of posting it as a bearer.
+   */
+  isCuberouterSession?: () => boolean;
 }
 
 const BUILT_IN_AVATARS = AvatarOptionSchema.array().parse([
@@ -266,6 +272,10 @@ async function resolveModelConfigTestInput(
 function getAuthenticatedCloudAccount(options: CreateAppConfigServiceOptions): { userId: string; uuid: string } {
   if (!options.accountSessionRepository) {
     throw Object.assign(new Error("Cloud account dependencies are not configured"), { code: "unauthorized" as const });
+  }
+
+  if (options.isCuberouterSession?.()) {
+    throw Object.assign(new Error("Account session is not authenticated"), { code: "unauthorized" as const });
   }
 
   const session = options.accountSessionRepository.get();

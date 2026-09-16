@@ -173,6 +173,29 @@ describe("BootstrapService", () => {
     ]);
   });
 
+  it("cuberouter 会话的 bootstrap 不向 memmy 云发任何带凭据的请求", async () => {
+    const calls: string[] = [];
+    const service = createBootstrapService({
+      ...createAuthenticatedAccountOptions({
+        async getTokenUsage() {
+          calls.push("getTokenUsage");
+          return undefined;
+        },
+        async getAccountInfo() {
+          calls.push("getAccountInfo");
+          return { improvementProgramGranted: true };
+        }
+      }),
+      isCuberouterSession: () => true
+    });
+
+    await expect(service.getBootstrap()).resolves.toBeDefined();
+
+    // The session credential is a cuberouter JWT: neither the quota refresh nor the
+    // improvement-program reconciliation may post it to the memmy cloud.
+    expect(calls).toEqual([]);
+  });
+
   it("账号模式下云端标记已发放改进计划时把本地 improvementProgram 投影为 accepted", async () => {
     const service = createBootstrapService(
       createAuthenticatedAccountOptions({

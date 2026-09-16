@@ -26,6 +26,12 @@ export interface CreateBootstrapServiceOptions {
   cloudClient: CloudClient;
   bootstrapScenario?: BootstrapScenario;
   scanPreferencesStore?: Pick<ScanPreferencesStore, "getScanPreferences">;
+  /**
+   * Whether the active session belongs to a cuberouter identity. Such a session carries a
+   * cuberouter JWT instead of a memmy cloud credential, so every cloud call that would send
+   * it as a bearer has to be skipped rather than failing with a 401 the user never sees.
+   */
+  isCuberouterSession?: () => boolean;
 }
 
 export function createBootstrapService(options: CreateBootstrapServiceOptions): BootstrapService {
@@ -89,6 +95,10 @@ async function reconcileImprovementProgram(
     return onboarding;
   }
 
+  if (options.isCuberouterSession?.()) {
+    return onboarding;
+  }
+
   const accountSession = options.appStateStore.repositories.accountSession;
   const session = accountSession.get();
   const uuid = accountSession.getCloudUuid();
@@ -110,6 +120,12 @@ async function reconcileImprovementProgram(
 
 /** Handles refresh token usage. */
 async function refreshTokenUsage(options: CreateBootstrapServiceOptions): Promise<TokenUsageDto | undefined> {
+  // Quota is a memmy cloud concept and a cuberouter session has no cloud account behind it;
+  // the request would only leak the JWT to a service that can never accept it.
+  if (options.isCuberouterSession?.()) {
+    return undefined;
+  }
+
   const accountSession = options.appStateStore.repositories.accountSession;
   const session = accountSession.get();
   const uuid = accountSession.getCloudUuid();

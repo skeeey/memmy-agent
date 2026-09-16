@@ -31,6 +31,12 @@ export interface CreateAsrServiceOptions {
   now?: () => string;
   /** Timeout ms. */
   timeoutMs?: number;
+  /**
+   * Whether the active session belongs to a cuberouter identity. The cloud transcription
+   * path sends the session credential as a bearer, and a cuberouter session only holds a
+   * JWT the memmy cloud cannot accept.
+   */
+  isCuberouterSession?: () => boolean;
 }
 
 const DEFAULT_ASR_TIMEOUT_MS = 30_000;
@@ -74,7 +80,9 @@ async function transcribeWithAccount(
   now: () => string
 ): Promise<AsrTranscriptionResponse> {
   const uuid = options.accountSessionRepository?.getCloudUuid();
-  if (!uuid) {
+  // A cuberouter session's credential is not a memmy cloud uuid: treat it as unauthenticated
+  // rather than posting a JWT the cloud rejects.
+  if (!uuid || options.isCuberouterSession?.()) {
     throw Object.assign(new Error("Cloud account is not authenticated"), { code: "unauthorized" as const });
   }
 

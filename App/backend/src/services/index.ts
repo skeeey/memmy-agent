@@ -138,6 +138,9 @@ export function createBackendServices(options: CreateBackendServicesOptions): Ba
     createHttpMemmyAgentAdminClient({ bootstrapSecret: options.memmyAgentAdminBootstrapSecret });
   const memmyConfigWriter = options.memmyConfigWriter ?? createUnavailableMemmyConfigWriter();
   const accountSessionRepository = options.appStateStore.repositories.accountSession;
+  // A cuberouter session stores its cuberouter JWT as the cloud credential, so every service
+  // that would send that credential to the memmy cloud takes this predicate and skips the call.
+  const isCuberouterSession = () => accountSessionRepository.getAuthChannel() === "cuberouter";
   const resolveAnalyticsUserId = () => {
     const session = accountSessionRepository.get();
     if (!session.authenticated) return null;
@@ -187,7 +190,8 @@ export function createBackendServices(options: CreateBackendServicesOptions): Ba
     agentAdapterRegistry: options.agentAdapterRegistry,
     bootstrap: createBootstrapService({
       ...options,
-      scanPreferencesStore: options.scanPreferencesStore
+      scanPreferencesStore: options.scanPreferencesStore,
+      isCuberouterSession
     }),
     appConfig: createAppConfigService({
       bootstrapRepository: options.appStateStore.repositories.bootstrap,
@@ -195,7 +199,8 @@ export function createBackendServices(options: CreateBackendServicesOptions): Ba
       accountSessionRepository: options.appStateStore.repositories.accountSession,
       memmyConfigWriter: options.memmyConfigWriter,
       memoryClient: options.memoryClient,
-      scanPreferencesStore: options.scanPreferencesStore
+      scanPreferencesStore: options.scanPreferencesStore,
+      isCuberouterSession
     }),
     account: createAccountService({
       cloudClient: options.cloudClient,
@@ -265,11 +270,13 @@ export function createBackendServices(options: CreateBackendServicesOptions): Ba
       bootstrapRepository: options.appStateStore.repositories.bootstrap,
       accountSessionRepository: options.appStateStore.repositories.accountSession,
       memmyConfigWriter,
-      cloudClient: options.cloudClient
+      cloudClient: options.cloudClient,
+      isCuberouterSession
     }),
     tokenQuota: createTokenQuotaService({
       cloudClient: options.cloudClient,
-      accountSessionRepository: options.appStateStore.repositories.accountSession
+      accountSessionRepository: options.appStateStore.repositories.accountSession,
+      isCuberouterSession
     })
   };
 }

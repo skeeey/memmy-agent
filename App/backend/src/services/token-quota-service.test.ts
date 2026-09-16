@@ -67,4 +67,20 @@ describe("token-quota-service", () => {
 
     await expect(svc.getEligibility()).rejects.toMatchObject({ code: "unauthorized" });
   });
+
+  it("cuberouter 会话不发云端请求，直接抛 unauthorized", async () => {
+    const requestTokenQuota = vi.fn();
+    const getTokenQuotaEligibility = vi.fn();
+    const svc = createTokenQuotaService({
+      cloudClient: { requestTokenQuota, getTokenQuotaEligibility } as never,
+      // A cuberouter session stores its JWT where a memmy cloud uuid used to be.
+      accountSessionRepository: repo("cuberouter-jwt"),
+      isCuberouterSession: () => true
+    });
+
+    await expect(svc.requestQuota({ reason: "x".repeat(20) })).rejects.toMatchObject({ code: "unauthorized" });
+    await expect(svc.getEligibility()).rejects.toMatchObject({ code: "unauthorized" });
+    expect(requestTokenQuota).not.toHaveBeenCalled();
+    expect(getTokenQuotaEligibility).not.toHaveBeenCalled();
+  });
 });
