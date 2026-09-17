@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source "$ROOT_DIR/scripts/internal/shared/package-logging.sh"
+source "$ROOT_DIR/scripts/internal/shared/ensure-electron-dist.sh"
 DESKTOP_DIR="$ROOT_DIR/App/shell/desktop"
 AGENT_DIR="$ROOT_DIR/App/memmy-agent"
 MEMORY_DIR="$ROOT_DIR/Memory"
@@ -449,6 +450,7 @@ verify_windows_better_sqlite3_runtime() {
   local node_runtime_dir
   node_runtime_dir="$(to_node_readable_path "$runtime_dir")"
 
+  ensure_electron_dist "$DESKTOP_DIR"
   require_packaged_runtime_file "$electron_executable"
   MEMMY_BETTER_SQLITE_RUNTIME_DIR="$node_runtime_dir" \
     ELECTRON_RUN_AS_NODE=1 \

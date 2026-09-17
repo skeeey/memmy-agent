@@ -24,6 +24,9 @@ import { pruneRuntimeEnvFiles } from "../scripts/internal/shared/prune-runtime-e
 
 const roots = [];
 const macBuildScriptSource = readFileSync(new URL("../scripts/internal/mac/build-dmg.sh", import.meta.url), "utf8");
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+const packageMirrorsScript = resolve(repoRoot, "scripts", "internal", "shared", "package-mirrors.sh");
+const ensureElectronDistScript = resolve(repoRoot, "scripts", "internal", "shared", "ensure-electron-dist.sh");
 
 afterEach(() => {
   while (roots.length) rmSync(roots.pop(), { recursive: true, force: true });
@@ -516,6 +519,56 @@ describe("packaged desktop runtime configuration", () => {
         '      - "**/*"',
       ].join("\n"));
     }
+  });
+
+  it("applies the cn package mirrors only when asked, and never overrides a caller's own", () => {
+    const readMirrors = (env) => {
+      const result = spawnSync(
+        "bash",
+        [
+          "-c",
+          `source ${JSON.stringify(packageMirrorsScript)} && apply_package_mirrors && ` +
+            `printf '%s|%s' "\${ELECTRON_MIRROR:-}" "\${ELECTRON_BUILDER_BINARIES_MIRROR:-}"`,
+        ],
+        { encoding: "utf8", env: { PATH: process.env.PATH, HOME: process.env.HOME, ...env } },
+      );
+      expect(result.status, result.stderr).toBe(0);
+      return result.stdout;
+    };
+
+    expect(readMirrors({})).toBe("|");
+    expect(readMirrors({ MEMMY_PACKAGE_MIRROR: "cn" })).toBe(
+      "https://npmmirror.com/mirrors/electron/|https://npmmirror.com/mirrors/electron-builder-binaries/",
+    );
+    expect(readMirrors({ MEMMY_PACKAGE_MIRROR: "cn", ELECTRON_MIRROR: "https://mirror.example.test/electron/" }))
+      .toContain("https://mirror.example.test/electron/");
+  });
+
+  it("runs the electron install script only when the distribution is missing", () => {
+    const root = mkdtempSync(join(tmpdir(), "memmy-electron-dist-"));
+    roots.push(root);
+    const desktopDir = join(root, "desktop");
+    const electronDir = join(desktopDir, "node_modules", "electron");
+    mkdirSync(electronDir, { recursive: true });
+    writeFileSync(
+      join(electronDir, "install.js"),
+      'require("node:fs").writeFileSync(require("node:path").join(__dirname, "ran"), "1");\n',
+    );
+    const run = () => spawnSync(
+      "bash",
+      ["-c", `source ${JSON.stringify(ensureElectronDistScript)} && ensure_electron_dist ${JSON.stringify(desktopDir)}`],
+      { encoding: "utf8" },
+    );
+
+    const first = run();
+    expect(first.status, first.stderr).toBe(0);
+    expect(existsSync(join(electronDir, "ran"))).toBe(true);
+
+    mkdirSync(join(electronDir, "dist"), { recursive: true });
+    rmSync(join(electronDir, "ran"));
+    const second = run();
+    expect(second.status, second.stderr).toBe(0);
+    expect(existsSync(join(electronDir, "ran"))).toBe(false);
   });
 });
 

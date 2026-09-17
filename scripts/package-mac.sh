@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT_DIR/scripts/internal/shared/package-logging.sh"
+source "$ROOT_DIR/scripts/internal/shared/package-mirrors.sh"
+apply_package_mirrors
 
 ARCH=""
 VERSION=""
