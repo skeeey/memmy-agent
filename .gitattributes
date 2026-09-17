@@ -1,0 +1,13 @@
+# Keep every text file LF in the working tree, on every platform.
+#
+# scripts/sync-project-version.mjs compares file text byte-for-byte, and the
+# Windows and macOS packaging scripts export MEMMY_VERSION_SYNC_CHECK_ONLY=1
+# before running it. On a CRLF checkout (the default for Git for Windows,
+# core.autocrlf=true) that comparison fails for every file it touches and the
+# build stops with "Derived version metadata is stale" before it can package
+# anything.
+* text=auto eol=lf
+
+# Batch files are the one format that still wants CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
