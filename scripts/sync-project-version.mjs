@@ -52,7 +52,7 @@ async function updateJson(relativePath, update) {
   const json = JSON.parse(currentText);
   update(json);
   const nextText = `${JSON.stringify(json, null, 2)}\n`;
-  if (nextText === currentText) return;
+  if (matchesIgnoringLineEndings(nextText, currentText)) return;
   if (checkOnly) {
     staleFiles.push(relativePath);
     return;
@@ -63,12 +63,29 @@ async function updateJson(relativePath, update) {
 async function updateText(relativePath, nextText) {
   const absolutePath = join(root, relativePath);
   const currentText = await readFile(absolutePath, "utf8");
-  if (nextText === currentText) return;
+  if (matchesIgnoringLineEndings(nextText, currentText)) return;
   if (checkOnly) {
     staleFiles.push(relativePath);
     return;
   }
   await writeFile(absolutePath, nextText, "utf8");
+}
+
+/**
+ * Compares file text while ignoring line-ending style.
+ *
+ * Git for Windows checks out CRLF by default, and a CRLF working tree carries
+ * byte-identical metadata — reporting it as stale fails the build for a reason
+ * that has nothing to do with versions, which is how the Windows packaging
+ * path broke. Line endings are not version metadata, so they do not decide
+ * staleness; a file that differs only in EOL style is left untouched.
+ *
+ * @param expected the text this script would write.
+ * @param actual the text currently on disk.
+ * @returns whether the two carry the same content.
+ */
+function matchesIgnoringLineEndings(expected, actual) {
+  return expected === actual || expected === actual.replace(/\r\n/g, "\n");
 }
 
 async function readJson(path) {

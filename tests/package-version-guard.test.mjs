@@ -55,6 +55,60 @@ describe("package version guard", () => {
     expect(agentLock.packages[""].version).toBe("1.1.2");
   });
 
+  it("accepts a CRLF working tree, as Git for Windows checks out by default", () => {
+    const root = fixtureRepo("1.0.8");
+    const script = join(root, "scripts", "sync-project-version.mjs");
+    mkdirSync(dirname(script), { recursive: true });
+    copyFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "sync-project-version.mjs"),
+      script,
+    );
+    // Canonicalize first: the fixture writes minimal files, and stale *content*
+    // is a real finding. Only the line-ending style is under test here.
+    const sync = spawnSync(process.execPath, [script], { cwd: root, encoding: "utf8" });
+    expect(sync.status, sync.stderr).toBe(0);
+    for (const relativePath of [
+      "package.json",
+      "App/memmy-agent/package.json",
+      "App/shell/desktop/package.json",
+      "App/backend/src/project-version.ts",
+      "package-lock.json",
+      "App/memmy-agent/package-lock.json",
+    ]) {
+      const absolutePath = join(root, relativePath);
+      writeFileSync(absolutePath, readFileSync(absolutePath, "utf8").replace(/\n/g, "\r\n"));
+    }
+
+    const result = spawnSync(process.execPath, [script], {
+      cwd: root,
+      encoding: "utf8",
+      env: { ...process.env, MEMMY_VERSION_SYNC_CHECK_ONLY: "1" },
+    });
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Verified project version 1.0.8");
+  });
+
+  it("still writes LF when the version actually changes in a CRLF working tree", () => {
+    const root = fixtureRepo("1.0.8");
+    const script = join(root, "scripts", "sync-project-version.mjs");
+    mkdirSync(dirname(script), { recursive: true });
+    copyFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "sync-project-version.mjs"),
+      script,
+    );
+    const lockPath = join(root, "package-lock.json");
+    writeFileSync(lockPath, readFileSync(lockPath, "utf8").replace(/\n/g, "\r\n"));
+    writeJson(join(root, "package.json"), { version: "1.0.9" });
+
+    const result = spawnSync(process.execPath, [script], { cwd: root, encoding: "utf8" });
+
+    expect(result.status, result.stderr).toBe(0);
+    const written = readFileSync(lockPath, "utf8");
+    expect(written).not.toContain("\r\n");
+    expect(readJson(lockPath).version).toBe("1.0.9");
+  });
+
   it("rejects a requested version that differs from source metadata", () => {
     const root = fixtureRepo("1.0.8");
     expect(() => verifyPackageVersion({ repoRoot: root, expected: "1.0.9" }))
