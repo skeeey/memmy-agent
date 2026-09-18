@@ -244,6 +244,10 @@ function createAuthServer(
   return {
     client: {
       account: {
+        getRegistrationRequirements: vi.fn(async () => ({
+          emailVerificationRequired: false,
+          turnstileRequired: false
+        })),
         register: vi.fn(async (input: { username: string }) => {
           order.push("account.register");
           registerUsernames.push(input.username);

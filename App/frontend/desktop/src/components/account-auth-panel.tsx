@@ -14,7 +14,7 @@ import { useAppState } from "../state/app-state.js";
 import { provisionByokModel } from "../state/model-provisioning.js";
 import { openExternalUrl } from "../utils/open-url.js";
 import { AuthCredentialsForm } from "./auth-credentials-form.js";
-import { useAccountAuth, useEmailVerificationCode } from "./use-account-auth.js";
+import { toFeedbackText, useAccountAuth, useEmailVerificationCode } from "./use-account-auth.js";
 
 /** Cuberouter-backed register/login panel shared by the welcome and login pages. */
 export function AccountAuthPanel() {
@@ -52,9 +52,12 @@ export function AccountAuthPanel() {
           setWarning(t("account.warning.turnstileRequired"));
         }
       } catch (error) {
-        // Unreachable, or an instance that does not answer: fall back to the plain form and
-        // let the register call report the real problem.
+        // Unreachable, or an instance that does not answer: fall back to the plain form, but
+        // say so. Silently showing the plain form is indistinguishable from an instance that
+        // needs nothing, which turns a misconfigured server address into a mystery: the
+        // fields are simply missing and nothing explains why.
         console.warn("registration requirements probe failed", error);
+        setWarning(toFeedbackText(error, t));
       }
     })();
     return () => {

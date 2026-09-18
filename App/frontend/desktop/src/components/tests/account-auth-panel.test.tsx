@@ -96,7 +96,10 @@ describe("AccountAuthPanel auth error copy", () => {
     mocks.state = createCompletedOnboardingState();
     const updateOnboarding = vi.fn(async (onboarding: unknown) => onboarding);
     mocks.clients = {
-      account: { login: vi.fn(async () => authResult({ isNewUser: false })) },
+      account: {
+        getRegistrationRequirements: vi.fn(async () => ({ emailVerificationRequired: false, turnstileRequired: false })),
+        login: vi.fn(async () => authResult({ isNewUser: false }))
+      },
       config: {
         getModelConfig: vi.fn(async () => emptyProviderConfig()),
         saveModelCatalog: vi.fn(async () => emptyProviderConfig()),
@@ -120,7 +123,10 @@ describe("AccountAuthPanel auth error copy", () => {
 
   it("reports a cuberouter signup with the identity and the mode the panel selects", async () => {
     mocks.clients = {
-      account: { register: vi.fn(async () => authResult({ isNewUser: true })) },
+      account: {
+        getRegistrationRequirements: vi.fn(async () => ({ emailVerificationRequired: false, turnstileRequired: false })),
+        register: vi.fn(async () => authResult({ isNewUser: true }))
+      },
       config: {
         getModelConfig: vi.fn(async () => emptyProviderConfig()),
         saveModelCatalog: vi.fn(async () => emptyProviderConfig()),
@@ -152,7 +158,10 @@ describe("AccountAuthPanel auth error copy", () => {
     const updateSettings = vi.fn(async (settings) => settings);
     const saveModelCatalog = vi.fn(async () => emptyProviderConfig());
     mocks.clients = {
-      account: { register: vi.fn(async () => authResult()) },
+      account: {
+        getRegistrationRequirements: vi.fn(async () => ({ emailVerificationRequired: false, turnstileRequired: false })),
+        register: vi.fn(async () => authResult())
+      },
       config: {
         getModelConfig: vi.fn(async () => emptyProviderConfig()),
         saveModelCatalog,
@@ -194,10 +203,14 @@ describe("AccountAuthPanel auth error copy", () => {
     expect(container.querySelectorAll("input")).toHaveLength(3);
   });
 
-  it("keeps the plain form when the instance cannot be reached", async () => {
-    renderPanel({ requirementsError: new ApiRequestError("无法连接 cuberouter 服务，请检查服务地址与网络", 503, "cuberouter_unavailable") });
+  it("keeps the plain form but says so when the instance cannot be reached", async () => {
+    // The fallback alone is indistinguishable from "this instance needs nothing", so a
+    // misconfigured server address used to look like a form that simply has no extra
+    // fields and no explanation.
+    const message = "无法连接 cuberouter 服务，请检查服务地址与网络";
+    renderPanel({ requirementsError: new ApiRequestError(message, 503, "cuberouter_unavailable") });
 
-    await act(async () => await Promise.resolve());
+    await vi.waitFor(() => expect(alertText()).toBe(message));
     expect(inputByPlaceholder("account.emailPlaceholder")).toBeNull();
   });
 
@@ -320,6 +333,7 @@ describe("AccountAuthPanel auth error copy", () => {
   async function submitFailingLogin(error: unknown) {
     mocks.clients = {
       account: {
+        getRegistrationRequirements: vi.fn(async () => ({ emailVerificationRequired: false, turnstileRequired: false })),
         login: vi.fn(async () => {
           throw error;
         })
