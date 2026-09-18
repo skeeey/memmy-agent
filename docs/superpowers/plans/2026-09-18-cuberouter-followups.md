@@ -64,6 +64,39 @@ cuberouter:
 
 原计划末尾记的残留项：`scripts/internal/shared/write-desktop-edition-manifest-lib.mjs` 的校验要求 HTTPS origin，会把本地默认值挡掉。F1 做完后可以用 `config.yaml` 承载默认值，这条要么改成"只注入生产 origin"，要么直接作废。
 
+### F6 构建不该依赖 shell 里 export 过的 legal 变量
+
+**现象**：Windows 上重新打包，4m25s 时死在 `Build Electron desktop shell`：
+
+```
+Error: MEMMY_LEGAL_CN_BASE_URL must be an HTTPS origin without a path.
+    at validateLegalEnv (vite.config.ts:29)
+```
+
+**根因**：`MEMMY_LEGAL_CN_BASE_URL` / `MEMMY_LEGAL_INTL_BASE_URL` 没有任何打包脚本提供，唯一来源是仓库根的 `.env`（vite 的 `envDir` 指向仓库根），而 `.env` 是 **gitignore 的**（`.gitignore:22`）——永远不随 pull 过来。上次成功是因为那个终端窗口里 export 过，窗口一关就没了。
+
+**绕过**：在仓库根建 `.env`。补第一个 legal 变量后又撞出 `MEMMY_CLOUD_SERVICE`（`write-desktop-edition-manifest-lib.mjs:33-40`，它也是先看 process.env 再回落到根 `.env`），所以**一共三行**：
+
+```
+MEMMY_LEGAL_CN_BASE_URL=https://memmy.cn
+MEMMY_LEGAL_INTL_BASE_URL=https://memmy.bot
+MEMMY_CLOUD_SERVICE=https://memmy-api.memtensor.cn
+```
+
+**这三个是整条打包链里唯一做强制校验的外部变量**（扫过 `scripts/` 下所有 `throw new Error("MEMMY_...")` 和变量引用）。其余几十个 `MEMMY_*` 都是脚本内部自己设的。`.env.example` 里剩下的 `MEMMY_CUBEROUTER_*` 是运行期的，构建不需要。
+
+**为什么是安全的**：`.env` 只在构建期给 vite 读；`electron-builder.yml:17-18` 明确排除 `**/.env`，产物里没有它；运行时读的是系统环境变量。
+
+**已做**：新增 `scripts/package-win-local.sh` —— 本地一键打包，把这几件事按顺序做掉：补 `.env`（缺哪个补哪个，值从 `.env.example` 取）、默认开镜像、**关掉在跑的 Memmy**、清掉 `release/win-unpacked`，然后原样交给 `package-win.sh`。版本默认读 `package.json`，edition 默认 `intl`。
+
+```bash
+bash scripts/package-win-local.sh                    # 一条命令
+bash scripts/package-win-local.sh --prepare-only     # 只做本地准备，不打包（用来验证环境）
+MEMMY_PACKAGE_MIRROR=off bash scripts/package-win-local.sh   # 走 GitHub 直连
+```
+
+**还值得做的**（不是现在）：`package-win.sh` 自己在开跑前也检查这三个变量，缺了就立刻报错并指向 `.env.example`，而不是等 4 分半死在 vite 构建里。校验本身要保留（它防的是打出法律条款指向错站点的包）。
+
 ### F3 验证码登录移除后的死代码清理
 
 `verification_code_throttle` 表、`AccountSessionRepository.getLastCodeSentAt` / `markCodeSent`、以及 `login.*` 里一批验证码相关 i18n key 在验证码登录移除后已无调用方。涉及表结构，单独清理，不和本次联调混在一起。
@@ -135,6 +168,14 @@ turnstile_check     = False
 
 ## 2. 联调记录
 
+### 2.0 怎么打包（一条命令）
+
+```bash
+bash scripts/package-win-local.sh
+```
+
+它把下面这些坑全包了（补 `.env`、开镜像、关在跑的 Memmy、清 `win-unpacked`），并把参数原样转给 `package-win.sh`。想换 edition 或版本号就正常传 `--edition cn` / `--version 1.2.0`。加 `--prepare-only` 只做本地准备不打包。
+
 ### 2.1 怎么起（两条命令，按需选）
 
 装好的包在 `App/shell/desktop/release/`：安装版 `Memmy-1.1.5-win32-x64-intl-unsigned.exe`，免安装版 `win-unpacked\Memmy.exe`。
@@ -186,6 +227,9 @@ start "" "C:\Users\skeee\Downloads\memmy-agent\App\shell\desktop\release\win-unp
 | K5 | **`setx` 不作用于已运行的 explorer** | 从开始菜单启动读不到变量 | 用上面的 `$env:`/`set` + 直接起 exe；或注销重登 |
 | K6 | **PowerShell 里的 `set` 不是 cmd 的 `set`**（是 `Set-Variable` 别名，只建了个 PS 变量） | 变量没生效 → app 回落到默认 `http://127.0.0.1:3000` → 秒报「无法连接 cuberouter 服务」 | PowerShell 用 `$env:NAME = "..."`；同理 `export` 在 PowerShell 里也不存在 |
 | K7 | **怎么区分"没连上"和"连上但超时"** | 两条都报同一句「无法连接 cuberouter 服务」 | 秒失败 = 连的是本机 `127.0.0.1:3000`（拒绝连接立即返回）；卡满 10 秒（`MEMMY_CUBEROUTER_TIMEOUT_MS` 默认值）才报 = 真的连上目标但超时 |
+| K8 | **`prebuild-install` 拿不到 better-sqlite3 预编译包** | `prebuild-install warn install read ECONNRESET` / `Request timed out`，重试 3 次 + 兜底直连下载全挂 | 加 `MEMMY_PACKAGE_MIRROR=cn` 前缀重跑。已核实：prebuild-install 7.1.3 读的正是 `package-mirrors.sh` 设的 `npm_config_better_sqlite3_binary_host_mirror`（`util.js:68-71`），镜像上 `v12.11.1/electron-v139-win32-x64` 文件确实存在，且 `simple-get` 默认跟随 302 |
+| K9 | **打包前没关掉正在运行的 App** | `EBUSY: resource busy or locked, unlink ...\release\win-unpacked\v8_context_snapshot.bin`，electron-builder 清不掉旧目录 | 关掉 `Memmy.exe`（含托盘残留）再打包：`Get-Process Memmy \| Stop-Process -Force`。**测的就是刚打出来的包，所以这条会反复出现** |
+| K10 | **huggingface.co 下不动 embedding 模型** | `Embedding model download failed from https://huggingface.co/` 刷 3 次 | 通常**不是问题**：脚本会换下一个 host 重试（`prepare-embedding-model.mjs:92`），第二个 host 成功时是静默的。看到 `Bundled embedding model is ready` 就说明 `verifyModelFiles()` 已通过，文件是完整的 |
 
 ### 2.3 待验清单
 
@@ -208,5 +252,9 @@ start "" "C:\Users\skeee\Downloads\memmy-agent\App\shell\desktop\release\win-unp
 | 3 | 2026-09-18 | Windows 打包版（PowerShell） | 设 `set MEMMY_CUBEROUTER_URL=...` 后启动，点注册 | 报「无法连接 cuberouter 服务，请检查服务地址与网络」；启动日志其余正常 | `main.log` 启动段 | 误因：**PowerShell 的 `set` 不设环境变量**（K6），app 回落到默认 `127.0.0.1:3000`。改用 `$env:` 重试 |
 | 4 | 2026-09-18 | Windows 打包版 → test.cuberouter.cn | 用 `$env:` 重试，点注册 | **请求到达服务端**，服务端拒绝：`Email verification is enabled, please enter email address and verification code` | 界面提示 | 链路已通到注册接口；目标实例开了邮箱验证 → 记为 **F5** |
 | 5 | 2026-09-18 | 开发机 | 实现 F5（自动探测，非 flag） | 后端 880/880、桌面 1560/1560、双向 typecheck 干净 | `npx vitest run` | 等重新打包后在 Windows 上验真机 |
+| 6 | 2026-09-18 | Windows 打包版 | `git pull` 后重新打包 | pull 快进 22 文件无冲突；打包 4m25s 死在 vite 构建：`MEMMY_LEGAL_CN_BASE_URL must be an HTTPS origin without a path` | 打包日志 | 环境问题的第三次重演（shell 状态不进 git）→ 记为 **F6**，建 `.env` 后重试 |
+| 7 | 2026-09-18 | Windows 打包版 | 补两行 legal 后重跑 | 过了 vite（4m48s），死在写 manifest：`MEMMY_CLOUD_SERVICE must be a non-empty HTTPS origin` | 打包日志 | F6 少了一个变量，`.env` 补到三行 |
+| 8 | 2026-09-18 | Windows 打包版 | 三行 `.env` 后重跑 | 过了 manifest（5m04s），死在 better-sqlite3 预编译包下载：`ECONNRESET` + 超时，重试全挂 | 打包日志 | 网络问题 → **K8**，加 `MEMMY_PACKAGE_MIRROR=cn` 重跑 |
+| 9 | 2026-09-18 | Windows 打包版 | 带镜像重跑 | 镜像生效（better-sqlite3 装好、native rebuild 通过），一路走到 electron-builder（7m00s），死在 `EBUSY ... v8_context_snapshot.bin` | 打包日志 | 在跑的 `win-unpacked\Memmy.exe` 锁住了旧目录 → **K9**，关进程 + 删目录后重跑 |
 
 > 记法：**结果**只写观察到的事实，**结论**写判断和下一步。失败就把 `main.log` 的最后一段贴进来或指个位置。
