@@ -1,6 +1,6 @@
 /** Account authentication module. */
 import type { CuberouterAuthResult } from "@memmy/local-api-contracts";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiRequestError } from "../api/http.js";
 import { useApiClients } from "../app/providers.js";
 import type { MessageKey } from "../i18n/messages.js";
@@ -11,16 +11,30 @@ export interface AuthFeedback {
   tone: "error" | "success";
 }
 
-export type CredentialsValidationResult =
-  | { ok: true; username: string; password: string }
-  | { ok: false; reason: "username" | "password" | "confirm" };
-
-/** Validates credentials against cuberouter's User rules (8-20 chars, upper + lower + digit). */
-export function validateCredentials(input: {
+export interface CredentialsInput {
   username: string;
   password: string;
   confirmPassword?: string;
-}): CredentialsValidationResult {
+  email?: string;
+  verificationCode?: string;
+  /** True when the target instance demands email verification at registration. */
+  emailVerificationRequired?: boolean;
+}
+
+export type CredentialsValidationResult =
+  | { ok: true; username: string; password: string; email?: string; verificationCode?: string }
+  | { ok: false; reason: "username" | "password" | "confirm" | "email" | "verificationCode" };
+
+/**
+ * A shape check only: the instance is the authority on what it accepts, and over-strict
+ * client rules would reject addresses the server would happily take.
+ */
+export function isEmailLike(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+/** Validates credentials against cuberouter's User rules (8-20 chars, upper + lower + digit). */
+export function validateCredentials(input: CredentialsInput): CredentialsValidationResult {
   const username = input.username.trim();
   if (!username || username.length > 50) {
     return { ok: false, reason: "username" };
@@ -38,13 +52,37 @@ export function validateCredentials(input: {
     return { ok: false, reason: "confirm" };
   }
 
-  return { ok: true, username, password };
+  const email = input.email?.trim() ?? "";
+  const verificationCode = input.verificationCode?.trim() ?? "";
+  // Only enforced when the instance asked for it: otherwise these fields are not on screen,
+  // and requiring them would block a login-shaped submit that never had them.
+  if (input.emailVerificationRequired) {
+    if (!isEmailLike(email)) {
+      return { ok: false, reason: "email" };
+    }
+    if (!verificationCode) {
+      return { ok: false, reason: "verificationCode" };
+    }
+  }
+
+  return {
+    ok: true,
+    username,
+    password,
+    ...(email ? { email } : {}),
+    ...(verificationCode ? { verificationCode } : {})
+  };
 }
 
-const validationMessageKeys: Record<"username" | "password" | "confirm", MessageKey> = {
+const validationMessageKeys: Record<
+  "username" | "password" | "confirm" | "email" | "verificationCode",
+  MessageKey
+> = {
   username: "account.error.username",
   password: "account.error.password",
-  confirm: "account.error.confirm"
+  confirm: "account.error.confirm",
+  email: "account.error.email",
+  verificationCode: "account.error.verificationCode"
 };
 
 type AuthTranslate = (key: MessageKey, values?: Record<string, string | number>) => string;
@@ -64,10 +102,64 @@ export function toFeedbackText(error: unknown, t: AuthTranslate): string {
 export interface UseAccountAuthResult {
   pending: boolean;
   feedback: AuthFeedback | null;
-  register(username: string, password: string, confirmPassword?: string): Promise<CuberouterAuthResult | null>;
-  login(username: string, password: string, confirmPassword?: string): Promise<CuberouterAuthResult | null>;
+  register(input: CredentialsInput): Promise<CuberouterAuthResult | null>;
+  login(input: CredentialsInput): Promise<CuberouterAuthResult | null>;
   clearFeedback(): void;
   setFailure(feedback: AuthFeedback): void;
+}
+
+/** Mirrors cuberouter's own sign-up form, and its two-sends-per-30s window. */
+export const EMAIL_CODE_COOLDOWN_SECONDS = 30;
+
+export interface UseEmailVerificationCodeResult {
+  sending: boolean;
+  secondsLeft: number;
+  /** Resolves with the failure copy to show, or `{ ok: true }` once the instance accepted it. */
+  send(email: string): Promise<{ ok: boolean; text?: string }>;
+}
+
+/** Drives the "send verification code" button and its cooldown. */
+export function useEmailVerificationCode(): UseEmailVerificationCodeResult {
+  const { clients } = useApiClients();
+  const { t } = useTranslation();
+  const [sending, setSending] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+
+  // Reschedules itself one second at a time rather than holding an interval: the countdown
+  // is the only state that changes, so the timeout can simply follow it.
+  useEffect(() => {
+    if (secondsLeft <= 0) {
+      return undefined;
+    }
+    const timer = setTimeout(() => setSecondsLeft((current) => current - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [secondsLeft]);
+
+  const send = useCallback(
+    async (email: string) => {
+      if (!isEmailLike(email)) {
+        return { ok: false, text: t("account.error.email") };
+      }
+      if (!clients || sending || secondsLeft > 0) {
+        return { ok: false };
+      }
+
+      setSending(true);
+      try {
+        await clients.account.sendEmailVerificationCode({ email: email.trim() });
+        setSecondsLeft(EMAIL_CODE_COOLDOWN_SECONDS);
+        return { ok: true };
+      } catch (error) {
+        // Keeps the instance's own copy (a throttled send answers with "wait N seconds").
+        return { ok: false, text: toFeedbackText(error, t) };
+      } finally {
+        setSending(false);
+      }
+    },
+    [clients, sending, secondsLeft, t]
+  );
+
+  return { sending, secondsLeft, send };
 }
 
 export function useAccountAuth(): UseAccountAuthResult {
@@ -79,13 +171,8 @@ export function useAccountAuth(): UseAccountAuthResult {
   const clearFeedback = useCallback(() => setFeedback(null), []);
 
   const authenticate = useCallback(
-    async (
-      mode: "register" | "login",
-      username: string,
-      password: string,
-      confirmPassword?: string
-    ): Promise<CuberouterAuthResult | null> => {
-      const validation = validateCredentials({ username, password, confirmPassword });
+    async (mode: "register" | "login", input: CredentialsInput): Promise<CuberouterAuthResult | null> => {
+      const validation = validateCredentials(input);
       if (!validation.ok) {
         setFeedback({ text: t(validationMessageKeys[validation.reason]), tone: "error" });
         return null;
@@ -98,7 +185,12 @@ export function useAccountAuth(): UseAccountAuthResult {
       setPending(true);
       setFeedback(null);
       try {
-        const credentials = { username: validation.username, password: validation.password };
+        const credentials = {
+          username: validation.username,
+          password: validation.password,
+          ...(validation.email ? { email: validation.email } : {}),
+          ...(validation.verificationCode ? { verificationCode: validation.verificationCode } : {})
+        };
         return mode === "register"
           ? await clients.account.register(credentials)
           : await clients.account.login(credentials);
@@ -115,8 +207,8 @@ export function useAccountAuth(): UseAccountAuthResult {
   return {
     pending,
     feedback,
-    register: (username, password, confirmPassword) => authenticate("register", username, password, confirmPassword),
-    login: (username, password, confirmPassword) => authenticate("login", username, password, confirmPassword),
+    register: (input) => authenticate("register", input),
+    login: (input) => authenticate("login", input),
     clearFeedback,
     setFailure: setFeedback
   };

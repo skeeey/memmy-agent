@@ -1,6 +1,10 @@
 /** Cuberouter account service module. */
-import type { CuberouterAuthResult } from "@memmy/local-api-contracts";
-import type { CuberouterClient, CuberouterErrorCode } from "../adapters/outbound/cuberouter-client/index.js";
+import type { CuberouterAuthInput, CuberouterAuthResult } from "@memmy/local-api-contracts";
+import type {
+  CuberouterClient,
+  CuberouterErrorCode,
+  CuberouterRegistrationRequirements
+} from "../adapters/outbound/cuberouter-client/index.js";
 import type { AccountSessionRepository } from "../infrastructure/app-state-store/repositories/account-session-repo.js";
 import type { ApiErrorCode } from "./error-envelope.js";
 
@@ -10,7 +14,10 @@ const CUBEROUTER_ERROR_CODES: Record<CuberouterErrorCode, ApiErrorCode> = {
   // Transport failures keep their own code rather than folding into "internal": the desktop
   // renders business messages only for codes it knows, so "internal" would swallow the
   // "cannot reach cuberouter" copy that the spec promises on the most likely failure.
-  service_unavailable: "cuberouter_unavailable"
+  service_unavailable: "cuberouter_unavailable",
+  // The send-code rate limit is a 429 on the wire, so it maps onto the existing 429 code
+  // and keeps cuberouter's own "wait N seconds" message.
+  email_code_throttled: "rate_limited"
 };
 
 /**
@@ -31,8 +38,11 @@ function toApiError(error: unknown): Error {
 export const MEMORY_DESKTOP_TOKEN_NAME = "memmy-desktop";
 
 export interface CuberouterAccountService {
-  register(input: { username: string; password: string }): Promise<CuberouterAuthResult>;
+  register(input: CuberouterAuthInput): Promise<CuberouterAuthResult>;
   login(input: { username: string; password: string }): Promise<CuberouterAuthResult>;
+  /** Probes the target instance so the form matches what it will accept. */
+  getRegistrationRequirements(): Promise<CuberouterRegistrationRequirements>;
+  sendEmailVerificationCode(email: string): Promise<{ ok: true }>;
   logout(): Promise<{ ok: true }>;
 }
 
@@ -116,8 +126,30 @@ export function createCuberouterAccountService(
   return {
     async register(input) {
       try {
-        await options.client.register({ username: input.username, password: input.password });
+        await options.client.register({
+          username: input.username,
+          password: input.password,
+          ...(input.email ? { email: input.email } : {}),
+          ...(input.verificationCode ? { verificationCode: input.verificationCode } : {})
+        });
         return await completeLogin(input.username, input.password);
+      } catch (error) {
+        throw toApiError(error);
+      }
+    },
+
+    async getRegistrationRequirements() {
+      try {
+        return await options.client.getRegistrationRequirements();
+      } catch (error) {
+        throw toApiError(error);
+      }
+    },
+
+    async sendEmailVerificationCode(email) {
+      try {
+        await options.client.sendEmailVerificationCode(email);
+        return { ok: true as const };
       } catch (error) {
         throw toApiError(error);
       }

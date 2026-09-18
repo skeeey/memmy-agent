@@ -212,6 +212,113 @@ describe("cuberouter client", () => {
     ).rejects.toMatchObject({ code: "service_unavailable" });
   });
 
+  it("reads the registration requirements the target instance advertises", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      // /api/status is public: sending the runtime token or a bearer here would leak a
+      // credential to an endpoint that never asked for one.
+      expect(init?.headers).toEqual({});
+      return jsonResponse({
+        success: true,
+        message: "",
+        data: { email_verification: true, turnstile_check: true, register_enabled: true }
+      });
+    });
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch).getRegistrationRequirements()
+    ).resolves.toEqual({ emailVerificationRequired: true, turnstileRequired: true });
+
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:3000/api/status");
+    expect(init.method).toBe("GET");
+  });
+
+  it("treats missing status flags as not required", async () => {
+    // An instance that predates or renames these fields must degrade to today's form
+    // (no extra inputs), not to a form that can never submit.
+    const fetchImpl = vi.fn(async () => jsonResponse({ success: true, message: "", data: {} }));
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch).getRegistrationRequirements()
+    ).resolves.toEqual({ emailVerificationRequired: false, turnstileRequired: false });
+  });
+
+  it("sends the email and verification code only when registering with them", async () => {
+    const responses = [
+      jsonResponse({ success: true, message: "" }),
+      jsonResponse({
+        success: true,
+        message: "",
+        data: { access_token: "jwt-1", user: { id: 7, username: "alice" } }
+      })
+    ];
+    const fetchImpl = vi.fn(async () => responses.shift()!);
+
+    await clientWith(fetchImpl as unknown as typeof fetch).register({
+      username: "alice",
+      password: "Passw0rd1",
+      email: "alice@example.com",
+      verificationCode: "123456"
+    });
+
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      username: "alice",
+      password: "Passw0rd1",
+      email: "alice@example.com",
+      verification_code: "123456"
+    });
+  });
+
+  it("omits the email fields when the instance does not verify email", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ success: true, message: "" }));
+
+    await clientWith(fetchImpl as unknown as typeof fetch).register({ username: "alice", password: "Passw0rd1" });
+
+    const [, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ username: "alice", password: "Passw0rd1" });
+  });
+
+  it("requests a verification code for the given address", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      expect(init?.headers).toEqual({});
+      return jsonResponse({ success: true, message: "" });
+    });
+
+    await clientWith(fetchImpl as unknown as typeof fetch).sendEmailVerificationCode("alice+test@example.com");
+
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:3000/api/verification?email=alice%2Btest%40example.com");
+    expect(init.method).toBe("GET");
+  });
+
+  it("reports the send-code rate limit with its own code", async () => {
+    // The only endpoint in this client that answers 429: cuberouter allows two sends per
+    // IP per 30s, and the desktop shows a different message for that than for a rejection.
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ success: false, message: "发送过于频繁，请等待 28 秒后再试" }, 429)
+    );
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch).sendEmailVerificationCode("alice@example.com")
+    ).rejects.toMatchObject({ code: "email_code_throttled" });
+  });
+
+  it("surfaces the server message when the verification code is wrong", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ success: false, message: "验证码错误或已过期" })
+    );
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch).register({
+        username: "alice",
+        password: "Passw0rd1",
+        email: "alice@example.com",
+        verificationCode: "000000"
+      })
+    ).rejects.toMatchObject({ code: "rejected", message: "验证码错误或已过期" });
+  });
+
   it("maps a failure while reading the response body to service_unavailable", async () => {
     const fetchImpl = vi.fn(async () =>
       ({

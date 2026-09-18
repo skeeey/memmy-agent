@@ -1,6 +1,6 @@
 /** Account auth panel module. */
 import type { CuberouterAuthResult, OnboardingStateDto } from "@memmy/local-api-contracts";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { setAnalyticsUserId } from "../analytics/analytics-context.js";
 import { useAnalytics } from "../analytics/use-analytics.js";
 import { buildInvitationSignupEvent } from "../app/invitation-analytics.js";
@@ -14,7 +14,7 @@ import { useAppState } from "../state/app-state.js";
 import { provisionByokModel } from "../state/model-provisioning.js";
 import { openExternalUrl } from "../utils/open-url.js";
 import { AuthCredentialsForm } from "./auth-credentials-form.js";
-import { useAccountAuth } from "./use-account-auth.js";
+import { useAccountAuth, useEmailVerificationCode } from "./use-account-auth.js";
 
 /** Cuberouter-backed register/login panel shared by the welcome and login pages. */
 export function AccountAuthPanel() {
@@ -23,12 +23,44 @@ export function AccountAuthPanel() {
   const { track } = useAnalytics();
   const { t, language } = useTranslation();
   const auth = useAccountAuth();
+  const code = useEmailVerificationCode();
   const [mode, setMode] = useState<"register" | "login">("register");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [email, setEmail] = useState("");
+  const [verificationCode, setVerificationCode] = useState("");
+  const [emailVerificationRequired, setEmailVerificationRequired] = useState(false);
   const [continuing, setContinuing] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
+
+  // The instance decides the form's shape, so ask it instead of guessing: a mismatch here
+  // is what produced "email verification is enabled" only after a doomed submit.
+  useEffect(() => {
+    if (!clients?.account) {
+      return undefined;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const requirements = await clients.account.getRegistrationRequirements();
+        if (cancelled) {
+          return;
+        }
+        setEmailVerificationRequired(requirements.emailVerificationRequired);
+        if (requirements.turnstileRequired) {
+          setWarning(t("account.warning.turnstileRequired"));
+        }
+      } catch (error) {
+        // Unreachable, or an instance that does not answer: fall back to the plain form and
+        // let the register call report the real problem.
+        console.warn("registration requirements probe failed", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clients, t]);
   // An authenticated result whose continuation failed; a retry must re-run only the
   // continuation, never the register/login call (re-registering would fail outright).
   const [pendingAuthResult, setPendingAuthResult] = useState<CuberouterAuthResult | null>(null);
@@ -38,6 +70,16 @@ export function AccountAuthPanel() {
     setPendingAuthResult(null);
   }
 
+  /** Requests a code and surfaces either outcome in the form's own feedback slot. */
+  async function sendVerificationCode() {
+    setWarning(null);
+    auth.clearFeedback();
+    const outcome = await code.send(email);
+    if (!outcome.ok && outcome.text) {
+      auth.setFailure({ text: outcome.text, tone: "error" });
+    }
+  }
+
   async function submit() {
     if (auth.pending || continuing) return;
     setWarning(null);
@@ -45,9 +87,19 @@ export function AccountAuthPanel() {
       await continueAfterAuth(pendingAuthResult);
       return;
     }
+    const credentials = {
+      username,
+      password,
+      // Only registration compares the confirmation; login has no such field on screen, and
+      // the empty state string would otherwise fail the match check.
+      confirmPassword: mode === "register" ? confirmPassword : undefined,
+      email,
+      verificationCode,
+      emailVerificationRequired
+    };
     const result = mode === "register"
-      ? await auth.register(username, password, confirmPassword)
-      : await auth.login(username, password);
+      ? await auth.register(credentials)
+      : await auth.login(credentials);
     if (!result || !result.session.authenticated) return;
     setAnalyticsUserId(result.session.profile.userId);
     // Emitted once per authentication, never on a continuation retry, and it describes this
@@ -158,11 +210,19 @@ export function AccountAuthPanel() {
         username={username}
         password={password}
         confirmPassword={mode === "register" ? confirmPassword : undefined}
+        emailVerificationRequired={emailVerificationRequired}
+        email={email}
+        verificationCode={verificationCode}
+        sendingCode={code.sending}
+        codeSecondsLeft={code.secondsLeft}
         disabled={auth.pending || continuing}
         feedback={auth.feedback ?? (warning ? { text: warning, tone: "error" } : null)}
         onUsernameChange={(next) => { clearPendingAuthResult(); setUsername(next); }}
         onPasswordChange={(next) => { clearPendingAuthResult(); setPassword(next); }}
         onConfirmPasswordChange={(next) => { clearPendingAuthResult(); setConfirmPassword(next); }}
+        onEmailChange={(next) => { clearPendingAuthResult(); setEmail(next); }}
+        onVerificationCodeChange={(next) => { clearPendingAuthResult(); setVerificationCode(next); }}
+        onSendCode={() => void sendVerificationCode()}
         onModeChange={(next) => { auth.clearFeedback(); clearPendingAuthResult(); setMode(next); }}
         onSubmit={() => void submit()}
         onOpenTerms={() => void openExternalUrl(getLegalLinkUrl("terms", language, state.bootstrap?.legal))}

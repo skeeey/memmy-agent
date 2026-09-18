@@ -6,6 +6,8 @@ import {
   AvatarOptionSchema,
   CuberouterAuthInputSchema,
   CuberouterAuthResultSchema,
+  CuberouterEmailCodeInputSchema,
+  CuberouterRegistrationRequirementsSchema,
   OkResponseSchema,
   SetAvatarInputSchema,
   UpdateAccountProfileInputSchema
@@ -42,6 +44,29 @@ export function registerAccountRoutes(app: FastifyInstance, options: RegisterAcc
     withErrorEnvelope(async (request, reply) => {
       const input = CuberouterAuthInputSchema.parse(request.body);
       const response = CuberouterAuthResultSchema.parse(await options.cuberouterAccount.login(input));
+      return reply.send(response);
+    })
+  );
+
+  app.get(
+    "/api/account/registration-requirements",
+    { preHandler: options.authenticateRuntimeToken },
+    withErrorEnvelope(async (_request, reply) => {
+      const response = CuberouterRegistrationRequirementsSchema.parse(
+        await options.cuberouterAccount.getRegistrationRequirements()
+      );
+      return reply.send(response);
+    })
+  );
+
+  app.post(
+    "/api/account/email-code",
+    { preHandler: options.authenticateRuntimeToken },
+    withErrorEnvelope(async (request, reply) => {
+      const input = CuberouterEmailCodeInputSchema.parse(request.body);
+      const response = OkResponseSchema.parse(
+        await options.cuberouterAccount.sendEmailVerificationCode(input.email)
+      );
       return reply.send(response);
     })
   );

@@ -124,6 +124,70 @@ describe("account local api routes", () => {
     expect(calls).toEqual(["register:alice"]);
   });
 
+  it("serves the instance registration requirements behind the runtime token", async () => {
+    app = createServer({
+      cuberouterAccount: {
+        async getRegistrationRequirements() {
+          return { emailVerificationRequired: true, turnstileRequired: false };
+        }
+      }
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/account/registration-requirements",
+      headers: { "x-memmy-local-token": "test-token" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ emailVerificationRequired: true, turnstileRequired: false });
+  });
+
+  it("sends a verification code to the requested address", async () => {
+    const calls: string[] = [];
+    app = createServer({
+      cuberouterAccount: {
+        async sendEmailVerificationCode(email: string) {
+          calls.push(`code:${email}`);
+          return { ok: true };
+        }
+      }
+    });
+
+    const response = await injectJson("POST", "/api/account/email-code", { email: "alice@example.com" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(calls).toEqual(["code:alice@example.com"]);
+  });
+
+  it("rejects a malformed address before it reaches the instance", async () => {
+    app = createServer();
+
+    const response = await injectJson("POST", "/api/account/email-code", { email: "not-an-email" });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("invalid_argument");
+  });
+
+  it("surfaces a throttled code send as 429 with the server message", async () => {
+    app = createServer({
+      cuberouterAccount: {
+        async sendEmailVerificationCode() {
+          throw Object.assign(new Error("发送过于频繁，请等待 28 秒后再试"), { code: "rate_limited" });
+        }
+      }
+    });
+
+    const response = await injectJson("POST", "/api/account/email-code", { email: "alice@example.com" });
+
+    expect(response.statusCode).toBe(429);
+    expect(response.json().error).toMatchObject({
+      code: "rate_limited",
+      message: "发送过于频繁，请等待 28 秒后再试"
+    });
+  });
+
   it("lists avatars and stores the selected avatar behind the runtime token", async () => {
     const calls: string[] = [];
     app = createServer({
@@ -220,6 +284,12 @@ function createServer(overrides: Record<string, unknown> = {}): FastifyInstance 
       },
       async login() {
         throw new Error("login not used");
+      },
+      async getRegistrationRequirements() {
+        return { emailVerificationRequired: false, turnstileRequired: false };
+      },
+      async sendEmailVerificationCode() {
+        throw new Error("sendEmailVerificationCode not used");
       },
       async logout() {
         return { ok: true };

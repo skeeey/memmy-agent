@@ -8,11 +8,21 @@ export interface AuthCredentialsFormProps {
   password: string;
   /** Only rendered in register mode. */
   confirmPassword?: string;
+  /** Rendered in register mode only, and only when the instance demands email verification. */
+  emailVerificationRequired?: boolean;
+  email?: string;
+  verificationCode?: string;
+  sendingCode?: boolean;
+  /** Seconds left before the code can be requested again; 0 means the button is ready. */
+  codeSecondsLeft?: number;
   feedback?: { text: string; tone: "error" | "success" } | null;
   disabled?: boolean;
   onUsernameChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
   onConfirmPasswordChange?: (value: string) => void;
+  onEmailChange?: (value: string) => void;
+  onVerificationCodeChange?: (value: string) => void;
+  onSendCode?: () => void;
   onSubmit: () => void;
   onModeChange: (mode: "register" | "login") => void;
   onOpenTerms?: () => void;
@@ -32,6 +42,9 @@ export function AuthCredentialsForm(props: AuthCredentialsFormProps) {
     }
   }
 
+  const showEmailVerification = props.mode === "register" && props.emailVerificationRequired === true;
+  const codeBlocked = props.sendingCode || (props.codeSecondsLeft ?? 0) > 0;
+
   return (
     <div className="space-y-3.5">
       <input
@@ -47,6 +60,21 @@ export function AuthCredentialsForm(props: AuthCredentialsFormProps) {
         onKeyDown={submitOnEnter}
         className={inputClassName}
       />
+      {showEmailVerification ? (
+        <input
+          type="email"
+          autoComplete="email"
+          autoCapitalize="none"
+          spellCheck={false}
+          maxLength={50}
+          placeholder={t("account.emailPlaceholder")}
+          value={props.email ?? ""}
+          aria-invalid={Boolean(errorFeedback)}
+          onChange={(event) => props.onEmailChange?.(event.target.value)}
+          onKeyDown={submitOnEnter}
+          className={inputClassName}
+        />
+      ) : null}
       <input
         type="password"
         autoComplete={props.mode === "register" ? "new-password" : "current-password"}
@@ -68,6 +96,32 @@ export function AuthCredentialsForm(props: AuthCredentialsFormProps) {
           onKeyDown={submitOnEnter}
           className={inputClassName}
         />
+      ) : null}
+      {showEmailVerification ? (
+        <div className="flex items-stretch gap-2">
+          <input
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            maxLength={20}
+            placeholder={t("account.verificationCodePlaceholder")}
+            value={props.verificationCode ?? ""}
+            aria-invalid={Boolean(errorFeedback)}
+            onChange={(event) => props.onVerificationCodeChange?.(event.target.value)}
+            onKeyDown={submitOnEnter}
+            className={`${inputClassName} flex-1 min-w-0`}
+          />
+          <button
+            type="button"
+            disabled={props.disabled || codeBlocked}
+            onClick={props.onSendCode}
+            className="auth-code-send shrink-0 px-3 text-xs text-action-sky border border-action-sky/40 rounded-input hover:bg-action-sky/10 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {props.codeSecondsLeft && props.codeSecondsLeft > 0
+              ? t("account.resendCode", { seconds: props.codeSecondsLeft })
+              : t("account.sendCode")}
+          </button>
+        </div>
       ) : null}
 
       {errorFeedback ? (

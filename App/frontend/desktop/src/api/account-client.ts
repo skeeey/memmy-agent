@@ -4,6 +4,8 @@ import {
   AccountSessionViewSchema,
   CuberouterAuthInputSchema,
   CuberouterAuthResultSchema,
+  CuberouterEmailCodeInputSchema,
+  CuberouterRegistrationRequirementsSchema,
   OkResponseSchema,
   UpdateAccountProfileInputSchema,
   type AccountInvitationView,
@@ -11,6 +13,8 @@ import {
   type AccountSessionView,
   type CuberouterAuthInput,
   type CuberouterAuthResult,
+  type CuberouterEmailCodeInput,
+  type CuberouterRegistrationRequirements,
   type OkResponse,
   type RuntimeConfig,
   type UpdateAccountProfileInput
@@ -20,6 +24,9 @@ import { requestJson } from "./http.js";
 export interface AccountClient {
   register(input: CuberouterAuthInput): Promise<CuberouterAuthResult>;
   login(input: CuberouterAuthInput): Promise<CuberouterAuthResult>;
+  /** Asks the instance what its registration form must collect. */
+  getRegistrationRequirements(): Promise<CuberouterRegistrationRequirements>;
+  sendEmailVerificationCode(input: CuberouterEmailCodeInput): Promise<OkResponse>;
   getInvitation(): Promise<AccountInvitationView>;
   updateProfile(input: UpdateAccountProfileInput): Promise<AccountProfileView>;
   markGuideFinished(): Promise<OkResponse>;
@@ -44,6 +51,25 @@ export function createHttpAccountClient(config: RuntimeConfig): AccountClient {
         path: "/api/account/login",
         schema: CuberouterAuthResultSchema,
         body: CuberouterAuthInputSchema.parse(input)
+      });
+    },
+
+    async getRegistrationRequirements() {
+      return requestJson({
+        config,
+        path: "/api/account/registration-requirements",
+        schema: CuberouterRegistrationRequirementsSchema,
+        init: { method: "GET" }
+      });
+    },
+
+    async sendEmailVerificationCode(input) {
+      return requestJson({
+        config,
+        path: "/api/account/email-code",
+        schema: OkResponseSchema,
+        init: { method: "POST" },
+        body: CuberouterEmailCodeInputSchema.parse(input)
       });
     },
 

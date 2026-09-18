@@ -31,7 +31,34 @@ export function createHttpCuberouterClient(options: CreateHttpCuberouterClientOp
     async register(input) {
       await request(fetchImpl, baseUrl, options.timeoutMs, "/api/user/register", {
         method: "POST",
-        body: { username: input.username, password: input.password }
+        body: {
+          username: input.username,
+          password: input.password,
+          // Only sent when the caller collected them: the field names are cuberouter's, and
+          // an instance without email verification ignores them but need not receive them.
+          ...(input.email ? { email: input.email } : {}),
+          ...(input.verificationCode ? { verification_code: input.verificationCode } : {})
+        }
+      });
+    },
+
+    async getRegistrationRequirements() {
+      const data = await request<Record<string, unknown>>(fetchImpl, baseUrl, options.timeoutMs, "/api/status", {
+        method: "GET"
+      });
+      // Strict true, and absent means false: an instance that renames or drops these fields
+      // must degrade to the plain form rather than to one that can never submit.
+      return {
+        emailVerificationRequired: data.email_verification === true,
+        turnstileRequired: data.turnstile_check === true
+      };
+    },
+
+    async sendEmailVerificationCode(email) {
+      const query = new URLSearchParams({ email }).toString();
+      await request(fetchImpl, baseUrl, options.timeoutMs, `/api/verification?${query}`, {
+        method: "GET",
+        tooManyRequestsCode: "email_code_throttled"
       });
     },
 
@@ -133,7 +160,13 @@ async function request<T>(
   baseUrl: string,
   timeoutMs: number,
   path: string,
-  input: { method: "GET" | "POST"; body?: Record<string, unknown>; accessToken?: string }
+  input: {
+    method: "GET" | "POST";
+    body?: Record<string, unknown>;
+    accessToken?: string;
+    /** Error code to raise instead of "rejected" when this call answers 429. */
+    tooManyRequestsCode?: CuberouterErrorCode;
+  }
 ): Promise<T> {
   let response: Response;
   let text: string;
@@ -155,6 +188,12 @@ async function request<T>(
   }
 
   const envelope = parseEnvelope(text);
+
+  // Checked before the generic rejection so a throttled send keeps its own code: the desktop
+  // shows a different (retry-shaped) message for it than for a plain rejection.
+  if (response.status === 429 && input.tooManyRequestsCode) {
+    throw cuberouterError(input.tooManyRequestsCode, envelope.message || "请求过于频繁，请稍后再试");
+  }
 
   if (!response.ok || envelope.success !== true) {
     throw cuberouterError("rejected", envelope.message || `cuberouter 请求失败（HTTP ${response.status}）`);

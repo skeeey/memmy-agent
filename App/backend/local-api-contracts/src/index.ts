@@ -1176,9 +1176,28 @@ export type AccountSessionView = z.infer<typeof AccountSessionViewSchema>;
 /** 定义 cuberouter 注册/登录入参，规则对齐 cuberouter 的 User 校验。 */
 export const CuberouterAuthInputSchema = z.object({
     username: z.string().trim().min(1).max(50),
-    password: z.string().min(8).max(20)
+    password: z.string().min(8).max(20),
+    /** 仅当目标实例开启邮箱验证时携带；登录不需要。 */
+    email: z.string().trim().email().max(50).optional(),
+    /** 与 email 成对出现，来自目标实例发出的验证码邮件。 */
+    verificationCode: z.string().trim().min(1).max(20).optional()
 });
 export type CuberouterAuthInput = z.infer<typeof CuberouterAuthInputSchema>;
+
+/** 定义注册前从目标实例探测到的注册要求，用于决定注册表单的形态。 */
+export const CuberouterRegistrationRequirementsSchema = z.object({
+    /** 目标实例开启了邮箱验证：注册必须带 email + verification_code。 */
+    emailVerificationRequired: z.boolean(),
+    /** 目标实例要求 Turnstile：本版本不支持，只能提示。 */
+    turnstileRequired: z.boolean()
+});
+export type CuberouterRegistrationRequirements = z.infer<typeof CuberouterRegistrationRequirementsSchema>;
+
+/** 定义发送邮箱验证码的入参。 */
+export const CuberouterEmailCodeInputSchema = z.object({
+    email: z.string().trim().email().max(50)
+});
+export type CuberouterEmailCodeInput = z.infer<typeof CuberouterEmailCodeInputSchema>;
 
 /** 定义注册/登录后返回的模型供给信息。 */
 export const CuberouterProvisioningSchema = z.object({

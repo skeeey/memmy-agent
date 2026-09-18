@@ -177,6 +177,146 @@ describe("AccountAuthPanel auth error copy", () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(appActions.navigate("/onboarding"));
   });
 
+  it("adds the email inputs when the instance requires email verification", async () => {
+    renderPanel({ registrationRequirements: { emailVerificationRequired: true, turnstileRequired: false } });
+
+    await vi.waitFor(() => expect(inputByPlaceholder("account.emailPlaceholder")).not.toBeNull());
+    expect(inputByPlaceholder("account.verificationCodePlaceholder")).not.toBeNull();
+    expect(buttonByLabel("account.sendCode")).not.toBeNull();
+  });
+
+  it("leaves the form untouched when the instance does not verify email", async () => {
+    renderPanel({ registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false } });
+
+    // The probe resolves asynchronously; give it the chance to (wrongly) add fields.
+    await act(async () => await Promise.resolve());
+    expect(inputByPlaceholder("account.emailPlaceholder")).toBeNull();
+    expect(container.querySelectorAll("input")).toHaveLength(3);
+  });
+
+  it("keeps the plain form when the instance cannot be reached", async () => {
+    renderPanel({ requirementsError: new ApiRequestError("无法连接 cuberouter 服务，请检查服务地址与网络", 503, "cuberouter_unavailable") });
+
+    await act(async () => await Promise.resolve());
+    expect(inputByPlaceholder("account.emailPlaceholder")).toBeNull();
+  });
+
+  it("submits the email and code the instance asked for", async () => {
+    const register = vi.fn(async () => {
+      throw new ApiRequestError("验证码错误或已过期", 400, "invalid_argument");
+    });
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: true, turnstileRequired: false },
+      register
+    });
+
+    await vi.waitFor(() => expect(inputByPlaceholder("account.emailPlaceholder")).not.toBeNull());
+    await setInput("account.usernamePlaceholder", "alice");
+    await setInput("account.emailPlaceholder", "alice@example.com");
+    await setInput("account.passwordPlaceholder", "Passw0rd1");
+    await setInput("account.confirmPasswordPlaceholder", "Passw0rd1");
+    await setInput("account.verificationCodePlaceholder", "123456");
+    await clickButton("account.register");
+
+    await vi.waitFor(() =>
+      expect(register).toHaveBeenCalledWith({
+        username: "alice",
+        password: "Passw0rd1",
+        email: "alice@example.com",
+        verificationCode: "123456"
+      })
+    );
+    expect(alertText()).toBe("验证码错误或已过期");
+  });
+
+  it("sends a code to the typed address and starts the cooldown", async () => {
+    const sendEmailVerificationCode = vi.fn(async () => ({ ok: true }));
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: true, turnstileRequired: false },
+      sendEmailVerificationCode
+    });
+
+    await vi.waitFor(() => expect(inputByPlaceholder("account.emailPlaceholder")).not.toBeNull());
+    await setInput("account.emailPlaceholder", "alice@example.com");
+    await clickButton("account.sendCode");
+
+    await vi.waitFor(() => expect(sendEmailVerificationCode).toHaveBeenCalledWith({ email: "alice@example.com" }));
+    // The label switching to the countdown is what proves the cooldown started.
+    await vi.waitFor(() => expect(buttonByLabel("account.resendCode")).not.toBeNull());
+  });
+
+  it("shows the instance's own message when the code send is throttled", async () => {
+    const message = "发送过于频繁，请等待 28 秒后再试";
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: true, turnstileRequired: false },
+      sendEmailVerificationCode: vi.fn(async () => {
+        throw new ApiRequestError(message, 429, "rate_limited");
+      })
+    });
+
+    await vi.waitFor(() => expect(inputByPlaceholder("account.emailPlaceholder")).not.toBeNull());
+    await setInput("account.emailPlaceholder", "alice@example.com");
+    await clickButton("account.sendCode");
+
+    await vi.waitFor(() => expect(alertText()).toBe(message));
+  });
+
+  it("warns instead of silently failing when the instance demands Turnstile", async () => {
+    renderPanel({ registrationRequirements: { emailVerificationRequired: true, turnstileRequired: true } });
+
+    await vi.waitFor(() => expect(alertText()).toBe("account.warning.turnstileRequired"));
+  });
+
+  /** Renders the panel against a fake account client carrying the given probe outcome. */
+  function renderPanel(input: {
+    registrationRequirements?: { emailVerificationRequired: boolean; turnstileRequired: boolean };
+    requirementsError?: unknown;
+    register?: (credentials: unknown) => Promise<unknown>;
+    sendEmailVerificationCode?: (payload: unknown) => Promise<unknown>;
+  }) {
+    mocks.clients = {
+      account: {
+        getRegistrationRequirements: vi.fn(async () => {
+          if (input.requirementsError) {
+            throw input.requirementsError;
+          }
+          return input.registrationRequirements ?? { emailVerificationRequired: false, turnstileRequired: false };
+        }),
+        register: input.register ?? vi.fn(async () => authResult({ isNewUser: true })),
+        login: vi.fn(async () => authResult({ isNewUser: false })),
+        sendEmailVerificationCode: input.sendEmailVerificationCode ?? vi.fn(async () => ({ ok: true }))
+      },
+      config: {
+        getModelConfig: vi.fn(async () => emptyProviderConfig()),
+        saveModelCatalog: vi.fn(async () => emptyProviderConfig()),
+        testModelConfig: vi.fn(async () => ({ ok: true, message: "ok", checkedAt: "2026-09-16T00:00:00.000Z" })),
+        updateSettings: vi.fn(async (settings: unknown) => settings),
+        updateOnboarding: vi.fn(async (onboarding: unknown) => onboarding)
+      }
+    } as unknown as AppClients;
+
+    act(() => root.render(<AccountAuthPanel />));
+  }
+
+  function inputByPlaceholder(placeholder: string): HTMLInputElement | null {
+    return container.querySelector(`input[placeholder="${placeholder}"]`);
+  }
+
+  async function setInput(placeholder: string, value: string) {
+    const input = inputByPlaceholder(placeholder);
+    if (!input) {
+      throw new Error(`input not found: ${placeholder}`);
+    }
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  function buttonByLabel(label: string): HTMLButtonElement | null {
+    return [...container.querySelectorAll("button")].find((candidate) => candidate.textContent === label) ?? null;
+  }
+
   async function submitFailingLogin(error: unknown) {
     mocks.clients = {
       account: {

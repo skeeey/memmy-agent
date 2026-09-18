@@ -58,6 +58,51 @@ describe("validateCredentials", () => {
       validateCredentials({ username: "alice", password: "Passw0rd1", confirmPassword: "Passw0rd2" })
     ).toEqual({ ok: false, reason: "confirm" });
   });
+
+  it("carries the email and code through when the instance requires them", () => {
+    expect(
+      validateCredentials({
+        username: "alice",
+        password: "Passw0rd1",
+        email: " alice@example.com ",
+        verificationCode: " 123456 ",
+        emailVerificationRequired: true
+      })
+    ).toEqual({
+      ok: true,
+      username: "alice",
+      password: "Passw0rd1",
+      email: "alice@example.com",
+      verificationCode: "123456"
+    });
+  });
+
+  it("requires a well-formed address and a code when the instance verifies email", () => {
+    const base = { username: "alice", password: "Passw0rd1", emailVerificationRequired: true };
+
+    expect(validateCredentials({ ...base, email: "", verificationCode: "123456" })).toEqual({
+      ok: false,
+      reason: "email"
+    });
+    expect(validateCredentials({ ...base, email: "alice@example", verificationCode: "123456" })).toEqual({
+      ok: false,
+      reason: "email"
+    });
+    expect(validateCredentials({ ...base, email: "alice@example.com", verificationCode: "   " })).toEqual({
+      ok: false,
+      reason: "verificationCode"
+    });
+  });
+
+  it("ignores both fields when the instance does not verify email", () => {
+    // Login never shows them, and an instance without verification does not want them: a
+    // stray value must not turn into a rejection.
+    expect(validateCredentials({ username: "alice", password: "Passw0rd1" })).toEqual({
+      ok: true,
+      username: "alice",
+      password: "Passw0rd1"
+    });
+  });
 });
 
 describe("toFeedbackText", () => {

@@ -12,6 +12,11 @@ function fakeClient(overrides: Partial<CuberouterClient> = {}): CuberouterClient
       username: "alice",
       displayName: "Alice"
     })),
+    getRegistrationRequirements: vi.fn(async () => ({
+      emailVerificationRequired: false,
+      turnstileRequired: false
+    })),
+    sendEmailVerificationCode: vi.fn(async () => undefined),
     listTokens: vi.fn(async () => []),
     createToken: vi.fn(async () => undefined),
     getTokenKey: vi.fn(async () => "sk-plain"),
@@ -65,6 +70,97 @@ describe("cuberouter account service", () => {
         profile: expect.objectContaining({ identityProvider: "cuberouter", nickname: "Alice" })
       })
     );
+  });
+
+  it("forwards the email verification fields the instance asked for", async () => {
+    const client = fakeClient({ listTokens: vi.fn(async () => [{ id: 3, name: "memmy-desktop" }]) });
+    const { repository } = fakeRepository();
+    const service = createCuberouterAccountService({
+      client,
+      accountSessionRepository: repository,
+      baseUrl: "http://127.0.0.1:3000",
+      model: "deepseek-flash"
+    });
+
+    await service.register({
+      username: "alice",
+      password: "Passw0rd1",
+      email: "alice@example.com",
+      verificationCode: "123456"
+    });
+
+    expect(client.register).toHaveBeenCalledWith({
+      username: "alice",
+      password: "Passw0rd1",
+      email: "alice@example.com",
+      verificationCode: "123456"
+    });
+  });
+
+  it("returns the registration requirements the instance advertises", async () => {
+    const client = fakeClient({
+      getRegistrationRequirements: vi.fn(async () => ({
+        emailVerificationRequired: true,
+        turnstileRequired: false
+      }))
+    });
+    const { repository } = fakeRepository();
+    const service = createCuberouterAccountService({
+      client,
+      accountSessionRepository: repository,
+      baseUrl: "http://127.0.0.1:3000",
+      model: "deepseek-flash"
+    });
+
+    await expect(service.getRegistrationRequirements()).resolves.toEqual({
+      emailVerificationRequired: true,
+      turnstileRequired: false
+    });
+  });
+
+  it("reports an unreachable instance when the requirements probe fails", async () => {
+    // The desktop treats a failed probe as "assume no extra inputs", so the code has to
+    // stay distinguishable from a schema error rather than collapsing to internal.
+    const client = fakeClient({
+      getRegistrationRequirements: vi.fn(async () => {
+        throw Object.assign(new Error("无法连接 cuberouter 服务，请检查服务地址与网络"), {
+          code: "service_unavailable" as const
+        });
+      })
+    });
+    const { repository } = fakeRepository();
+    const service = createCuberouterAccountService({
+      client,
+      accountSessionRepository: repository,
+      baseUrl: "http://127.0.0.1:3000",
+      model: "deepseek-flash"
+    });
+
+    await expect(service.getRegistrationRequirements()).rejects.toMatchObject({
+      code: "cuberouter_unavailable"
+    });
+  });
+
+  it("keeps the retry-shaped message when the code send is throttled", async () => {
+    const client = fakeClient({
+      sendEmailVerificationCode: vi.fn(async () => {
+        throw Object.assign(new Error("发送过于频繁，请等待 28 秒后再试"), {
+          code: "email_code_throttled" as const
+        });
+      })
+    });
+    const { repository } = fakeRepository();
+    const service = createCuberouterAccountService({
+      client,
+      accountSessionRepository: repository,
+      baseUrl: "http://127.0.0.1:3000",
+      model: "deepseek-flash"
+    });
+
+    await expect(service.sendEmailVerificationCode("alice@example.com")).rejects.toMatchObject({
+      code: "rate_limited",
+      message: "发送过于频繁，请等待 28 秒后再试"
+    });
   });
 
   it("reuses the existing memmy-desktop token on later logins", async () => {
