@@ -280,11 +280,33 @@ describe("AccountAuthPanel auth error copy", () => {
     await vi.waitFor(() => expect(alertText()).toBe("account.warning.turnstileRequired"));
   });
 
+  it("logs in without email fields even when the instance verifies email at registration", async () => {
+    // The requirement describes registration only: in login mode the email inputs are not
+    // on screen, so enforcing them there would reject every login with a demand for an
+    // address the user was never shown a field for.
+    const login = vi.fn(async () => authResult({ isNewUser: false }));
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: true, turnstileRequired: false },
+      login
+    });
+
+    await vi.waitFor(() => expect(inputByPlaceholder("account.emailPlaceholder")).not.toBeNull());
+    await clickButton("account.switchToLogin");
+    expect(inputByPlaceholder("account.emailPlaceholder")).toBeNull();
+    await setInput("account.usernamePlaceholder", "alice");
+    await setInput("account.passwordPlaceholder", "Passw0rd1");
+    await clickButton("account.login");
+
+    // An exact-match assertion: no email or verificationCode may ride along.
+    await vi.waitFor(() => expect(login).toHaveBeenCalledWith({ username: "alice", password: "Passw0rd1" }));
+  });
+
   /** Renders the panel against a fake account client carrying the given probe outcome. */
   function renderPanel(input: {
     registrationRequirements?: { emailVerificationRequired: boolean; turnstileRequired: boolean };
     requirementsError?: unknown;
     register?: (credentials: unknown) => Promise<unknown>;
+    login?: (credentials: unknown) => Promise<unknown>;
     sendEmailVerificationCode?: (payload: unknown) => Promise<unknown>;
   }) {
     mocks.clients = {
@@ -296,7 +318,7 @@ describe("AccountAuthPanel auth error copy", () => {
           return input.registrationRequirements ?? { emailVerificationRequired: false, turnstileRequired: false };
         }),
         register: input.register ?? vi.fn(async () => authResult({ isNewUser: true })),
-        login: vi.fn(async () => authResult({ isNewUser: false })),
+        login: input.login ?? vi.fn(async () => authResult({ isNewUser: false })),
         sendEmailVerificationCode: input.sendEmailVerificationCode ?? vi.fn(async () => ({ ok: true }))
       },
       config: {

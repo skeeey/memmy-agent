@@ -96,9 +96,12 @@ export function AccountAuthPanel() {
       // Only registration compares the confirmation; login has no such field on screen, and
       // the empty state string would otherwise fail the match check.
       confirmPassword: mode === "register" ? confirmPassword : undefined,
-      email,
-      verificationCode,
-      emailVerificationRequired
+      // The email pair is scoped the same way: the requirement describes registration, and
+      // in login mode the fields are not on screen, so enforcing them there would reject
+      // every login with a demand for an address the user was never shown a field for.
+      email: mode === "register" ? email : undefined,
+      verificationCode: mode === "register" ? verificationCode : undefined,
+      emailVerificationRequired: mode === "register" && emailVerificationRequired
     };
     const result = mode === "register"
       ? await auth.register(credentials)
