@@ -101,6 +101,13 @@ describe("ProductTourGuide", () => {
     expect(productTourStepTabsForIdentity("memmy_cloud")).toEqual(["logs", "agents", "agentsScan", "overview", "tools"]);
   });
 
+  it("cuberouter 身份在导览结束后跳过昵称弹窗，直接完成引导", () => {
+    // AppRouter 没有组件测试底座，这里钉住 dismissProductTour 里的接线：cuberouter 身份
+    // 走 accountProvidesNickname 分支（不再写 "nickname" deferred step），云账号保持原样。
+    const source = readFileSync(new URL("../router.tsx", import.meta.url), "utf8");
+    expect(source).toContain("accountProvidesNickname(state.account.identityProvider)");
+  });
+
   it("拒绝授权末步 CTA 用开始使用，扫描用户用进入首次对话", () => {
     const source = readFileSync(new URL("../product-tour.tsx", import.meta.url), "utf8");
     expect(source).toContain('includeLogs ? t("onboarding.featureDig.startChat") : t("productTour.start")');

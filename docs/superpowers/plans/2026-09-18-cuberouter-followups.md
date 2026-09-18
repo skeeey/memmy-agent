@@ -166,6 +166,16 @@ turnstile_check     = False
 
 **2026-09-18 补修**：探测失败原本是**静默**回退的，结果"环境没配对"和"服务端不需要"长得一模一样 —— 首次真机验证时正是这个把一次环境变量配错误导成了"功能没生效"（见记录表第 10 行）。现在探测失败会把服务端的原因显示在表单上（复用 `warning` 槽位），并保留 `console.warn`。
 
+### F7 cuberouter 身份跳过导览后的昵称弹窗
+
+**现象**：注册/首登后的引导末尾会弹昵称窗，初始值是随机名；但弹窗答案只落 `localStorage`（cuberouter 身份 `userMode=byok`，`persistNickname` 不走 `updateProfile`），**下次登录又被 profile 覆盖回用户名** —— 选了白选。
+
+**根因**：昵称弹窗是云账号时代的设计（邮箱/手机号没有名字，随机一个）；它不知道 cuberouter 账号有用户名。登录时后端已把 `displayName`（注册时默认 = 用户名）写进 `account.nickname`（`cuberouter-account-service.ts:85`）。
+
+**已实现（2026-09-18）**：`dismissProductTour`（`router.tsx`，"nickname" deferred step 的唯一写入点）加分支 —— `accountProvidesNickname(identityProvider)` 为真（cuberouter）时不再写 `"nickname"` deferred step，直接 `writeGuidanceCompleted` + 清 step + 进 `/main`，昵称就用账号的 displayName；云账号路径不变。埋点保留（nickname 步记 `choice: "account"` + `onboarding_completed`），漏斗不断。首次引导的其余部分（扫描权限、首扫报告、产品导览）**保留** —— 扫描权限真的配置功能。
+
+- 测试：`nickname.test.ts` 谓词双分支 + `product-tour.test.tsx` 接线断言（AppRouter 无组件测试底座，与"cuberouter 去掉工具步"同法）。桌面 166 文件 / 1565 全绿。
+
 ---
 
 ## 2. 联调记录

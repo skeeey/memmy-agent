@@ -1,6 +1,7 @@
 /** Nickname tests. */
 import { describe, expect, it, vi } from "vitest";
 import {
+  accountProvidesNickname,
   buildAccountNicknameUpdate,
   persistNickname,
   readLocalNickname,
@@ -73,6 +74,13 @@ describe("nickname 公共逻辑", () => {
     expect(updateProfile).toHaveBeenCalledWith("明朗白鹤");
     expect(readLocalNickname(storage)).toBeNull();
     expect(update.nickname).toBe("明朗白鹤");
+  });
+
+  it("cuberouter 身份的昵称由账号提供，云账号仍需询问", () => {
+    // cuberouter 登录时 displayName（= 用户名）已写进 account.nickname，且弹窗答案只落
+    // localStorage、下次登录还会被 profile 覆盖——问了也白问。云账号是邮箱/手机号，没有名字，仍需询问。
+    expect(accountProvidesNickname("cuberouter")).toBe(true);
+    expect(accountProvidesNickname("memmy_cloud")).toBe(false);
   });
 
   it("账号模式 updateProfile 失败时回退最终昵称，不抛错", async () => {

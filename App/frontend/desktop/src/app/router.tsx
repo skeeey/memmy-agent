@@ -34,7 +34,7 @@ import {
   type AppRoutePath,
   type DeferredGuidanceStep
 } from "./routes.js";
-import { persistNickname } from "./nickname.js";
+import { accountProvidesNickname, persistNickname } from "./nickname.js";
 import { useOptionalApiClients } from "./providers.js";
 import { canUseCloudFeatures } from "../state/app-reducer.js";
 import { useAppState } from "../state/app-state.js";
@@ -182,6 +182,17 @@ export function AppRouter(props: { onRetry: () => void }) {
       }
     }
     clearProductTourStep(storage);
+    // A cuberouter account already has a name — login wrote its displayName into
+    // account.nickname — so the nickname modal is skipped and the guidance ends here.
+    if (accountProvidesNickname(state.account.identityProvider)) {
+      track(buildOnboardingStepCompletedEvent({ step: "nickname", choice: "account", scanPermission }));
+      track(buildOnboardingCompletedEvent(scanPermission));
+      writeGuidanceCompleted(typeof window === "undefined" ? undefined : window.localStorage);
+      clearDeferredGuidanceStep(storage);
+      setWorkspaceGuidanceStep(null);
+      dispatch(appActions.navigate("/main"));
+      return;
+    }
     // Persist nickname step before navigating so the path-change effect does not
     // re-read stale `product_tour` and remount the tour on /tools.
     writeDeferredGuidanceStep(storage, "nickname");

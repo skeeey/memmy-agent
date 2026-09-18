@@ -44,6 +44,17 @@ export function resolveSubmittedNickname(raw: string, language: NicknameLanguage
   return raw.trim() || randomNickname(language);
 }
 
+/**
+ * True when the signed-in account already provides the display name. A cuberouter
+ * identity's nickname is its displayName, written into account state at login, so the
+ * post-tour nickname modal would ask for something the account already has — and the
+ * answer would only live in localStorage until the next login overwrote it with the
+ * profile again. Cloud identities (email/phone) have no name, so they still get asked.
+ */
+export function accountProvidesNickname(identityProvider: "memmy_cloud" | "cuberouter"): boolean {
+  return identityProvider === "cuberouter";
+}
+
 /** Builds build account nickname update. */
 export function buildAccountNicknameUpdate(
   finalNickname: string,
