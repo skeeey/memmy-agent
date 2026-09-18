@@ -175,6 +175,7 @@ turnstile_check     = False
 **已实现（2026-09-18）**：`dismissProductTour`（`router.tsx`，"nickname" deferred step 的唯一写入点）加分支 —— `accountProvidesNickname(identityProvider)` 为真（cuberouter）时不再写 `"nickname"` deferred step，直接 `writeGuidanceCompleted` + 清 step + 进 `/main`，昵称就用账号的 displayName；云账号路径不变。埋点保留（nickname 步记 `choice: "account"` + `onboarding_completed`），漏斗不断。首次引导的其余部分（扫描权限、首扫报告、产品导览）**保留** —— 扫描权限真的配置功能。
 
 - 测试：`nickname.test.ts` 谓词双分支 + `product-tour.test.tsx` 接线断言（AppRouter 无组件测试底座，与"cuberouter 去掉工具步"同法）。桌面 166 文件 / 1565 全绿。
+- 真机验证：引导在每台机器只跑一次，已跑完的机器看不到差别。用 `scripts/clear-win-app-data.cmd` 清掉 `%APPDATA%\Memmy` 后注册新账号，走完导览应**直接进主界面、显示注册用户名**，无昵称弹窗。
 
 ---
 
@@ -218,6 +219,8 @@ $env:MEMMY_CUBEROUTER_URL          # 启动前确认一眼
 注意赋值语句本身**没有回显**，所以启动前单独敲一行 `$env:MEMMY_CUBEROUTER_URL` 确认；四行必须在同一个窗口里。路径带空格时末尾命令的 `&` 不能省。
 
 日志：`%APPDATA%\Memmy\logs\main.log`；模型配置：`C:\Users\skeee\.memmy\config.yaml`。
+
+想重跑首次引导（比如验证 F7）：双击 `scripts/clear-win-app-data.cmd` —— 关 Memmy、删 `%APPDATA%\Memmy`（onboarding 状态、localStorage、会话、日志都在里面），**不动** `~/.memmy`（模型配置和 workspace 保留）。删完用 `run-win-local.cmd` 起，注册个新账号即是全新首次体验。
 
 ### 2.2 测之前先看：已知的坑
 
