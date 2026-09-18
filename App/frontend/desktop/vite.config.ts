@@ -11,6 +11,7 @@ const RUNTIME_CONFIG_ENDPOINT = "/__memmy_runtime_config";
 const LOCAL_API_CONTRACTS_SOURCE = fileURLToPath(new URL("../../backend/local-api-contracts/src/index.ts", import.meta.url));
 const LEGAL_BASE_URL_ENV_KEYS = ["MEMMY_LEGAL_CN_BASE_URL", "MEMMY_LEGAL_INTL_BASE_URL"] as const;
 export const PUBLIC_MEMMY_RENDERER_ENV_KEYS = [
+  "MEMMY_ACCOUNT_BACKEND",
   "MEMMY_APP_EDITION",
   "MEMMY_CLOUD_SERVICE",
   "MEMMY_GA4_MEASUREMENT_ID",

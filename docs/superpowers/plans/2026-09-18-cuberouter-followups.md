@@ -121,15 +121,15 @@ MEMMY_PACKAGE_MIRROR=off bash scripts/package-win-local.sh   # 走 GitHub 直连
 - **隐藏条件：新增构建期开关 `MEMMY_ACCOUNT_BACKEND`**（取值 `cuberouter` → 隐藏这两处）。语义是"这个构建的账号后端是谁"，比复用 `MEMMY_APP_EDITION` 准确：将来 cn 版也用 cuberouter、或 intl 版回到 memmy 云都不会判错。
 - **第二处直接隐藏**，不做灰按钮——设置页的模型工作区仍能配自有 key，丢的只是"登录前免注册"这条捷径。
 
-**落点（已探明，实现时照这个走）**
+**已实现（2026-09-18）**
 
-- `App/frontend/desktop/vite.config.ts:13` 的 `PUBLIC_MEMMY_RENDERER_ENV_KEYS` 加 `MEMMY_ACCOUNT_BACKEND`。这个数组的作用就是 define `import.meta.env.<KEY>`（`:51-56`），未设时 define 成字面量 `undefined`，天然走 fallback。
-- 渲染层加个小 helper（如 `app/account-backend.ts` 的 `isCuberouterAccountBackend()`），照 `legal/legal-links.ts:13`、`app/providers.tsx:84` 读 `import.meta.env` 的写法。
-- `pages/welcome-page.tsx`：`showLoginBanner`（`:26-29`）加条件；`:113-127`（「或」分隔线 + BYOK 入口）整段条件渲染。
-- 打包脚本 `scripts/package-win.sh` / `scripts/package-mac.sh` 在 edition 分支旁边 export。
-- 测试：`pages/tests/welcome-page-icons.test.ts`、`welcome-page-legal-link.test.ts` 同目录加用例；`i18n/tests/i18n.test.ts:18` 那条 `welcome.gift` 文案断言不受影响（key 保留，只是不渲染）。
+- `App/frontend/desktop/vite.config.ts` 的 `PUBLIC_MEMMY_RENDERER_ENV_KEYS` 加 `MEMMY_ACCOUNT_BACKEND`（该数组就是 define `import.meta.env.<KEY>`）。
+- 新增 `app/account-backend.ts` 的 `isCuberouterAccountBackend()`。
+- `pages/welcome-page.tsx`：横幅加 `!isCuberouterAccountBackend()` 条件；「或」分隔线 + BYOK 入口 + 反馈整段包进 `showCloudEntries`。
+- `.env.example` 记录了开关（注释形式，默认不设）。
+- 测试：新增 `pages/tests/welcome-page-cloud-entries.test.tsx`，用模块 mock 覆盖**两个分支**（隐藏 / 保留）。桌面 166 文件 / 1562 全绿。
 
-**待定的一个小决策**：`MEMMY_ACCOUNT_BACKEND` **未设时默认算哪边**。这个分支的登录已经是 cuberouter-only（验证码流程已删），所以"默认 cuberouter"更诚实——但那会让所有打包版都隐藏横幅。等测完再定。
+**默认值决策**：不设 = **cuberouter**（即默认隐藏）。理由：这个分支的登录已经只有 cuberouter 一种（验证码流程已删），而横幅承诺的那份 token，cuberouter 身份根本拿不到（`isCuberouterSession` 会跳过云发放）—— 也就是**在所有构建里它都是空头承诺**。要恢复就显式设 `MEMMY_ACCOUNT_BACKEND=memmy_cloud`。这也是选"开关"而不是"直接删"的意义所在：将来真做回云账号时，一行就能拿回来。
 
 ### F5 注册支持邮箱验证（email + 验证码 + 发送按钮），由 flag 控制
 

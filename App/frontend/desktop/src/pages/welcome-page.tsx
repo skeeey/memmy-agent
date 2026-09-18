@@ -2,6 +2,7 @@
 import { Gift, Key } from "lucide-react";
 import { useState } from "react";
 import { useAnalytics } from "../analytics/use-analytics.js";
+import { isCuberouterAccountBackend } from "../app/account-backend.js";
 import { persistLoginModeSelection } from "../app/login-mode.js";
 import { useApiClients } from "../app/providers.js";
 import { resolveByokEntry } from "../app/routes.js";
@@ -23,7 +24,13 @@ export function WelcomePage() {
   const [modePersistencePending, setModePersistencePending] = useState(false);
   const [modePersistenceFeedback, setModePersistenceFeedback] = useState<{ text: string; tone: "error" | "success" } | null>(null);
   const agentChatTokenTotal = state.bootstrap?.promotions?.agentChatTokenTotal;
+  // Both entries below the card offer a memmy platform account: the banner promises a
+  // sign-up gift, and the bypass skips registration entirely. Neither means anything to a
+  // build whose accounts come from cuberouter, so they are gated on the build, not on the
+  // session — before anyone signs in there is no identity to ask.
+  const showCloudEntries = !isCuberouterAccountBackend();
   const showLoginBanner =
+    showCloudEntries &&
     canUseCloudFeatures(state) &&
     (state.bootstrap?.promotions?.loginBanner ?? true) &&
     (agentChatTokenTotal ?? 0) > 0;
@@ -110,30 +117,34 @@ export function WelcomePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 mt-4 mb-4">
-            <div className="flex-1 h-px bg-border-stone/60" />
-            <span className="text-xs text-text-ink/45">{t("welcome.or")}</span>
-            <div className="flex-1 h-px bg-border-stone/60" />
-          </div>
+          {showCloudEntries ? (
+            <>
+              <div className="flex items-center gap-3 mt-4 mb-4">
+                <div className="flex-1 h-px bg-border-stone/60" />
+                <span className="text-xs text-text-ink/45">{t("welcome.or")}</span>
+                <div className="flex-1 h-px bg-border-stone/60" />
+              </div>
 
-          <button
-            type="button"
-            disabled={modePersistencePending}
-            onClick={() => void useOwnApiKey()}
-            className="welcome-byok-action w-full flex items-center justify-center gap-2.5 py-3 text-sm text-text-ink/75 hover:text-action-sky transition-all cursor-pointer shadow-sm disabled:opacity-45 disabled:cursor-not-allowed"
-          >
-            <Key size={15} />
-            {t("welcome.byok.quickAction")}
-          </button>
+              <button
+                type="button"
+                disabled={modePersistencePending}
+                onClick={() => void useOwnApiKey()}
+                className="welcome-byok-action w-full flex items-center justify-center gap-2.5 py-3 text-sm text-text-ink/75 hover:text-action-sky transition-all cursor-pointer shadow-sm disabled:opacity-45 disabled:cursor-not-allowed"
+              >
+                <Key size={15} />
+                {t("welcome.byok.quickAction")}
+              </button>
 
-          {modePersistenceFeedback ? (
-            <p
-              role="alert"
-              aria-live="polite"
-              className="welcome-byok-action-feedback w-full text-left text-[12px] font-normal leading-5 text-status-error"
-            >
-              {modePersistenceFeedback.text}
-            </p>
+              {modePersistenceFeedback ? (
+                <p
+                  role="alert"
+                  aria-live="polite"
+                  className="welcome-byok-action-feedback w-full text-left text-[12px] font-normal leading-5 text-status-error"
+                >
+                  {modePersistenceFeedback.text}
+                </p>
+              ) : null}
+            </>
           ) : null}
           </div>
         </div>
