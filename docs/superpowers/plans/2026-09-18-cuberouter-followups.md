@@ -203,16 +203,7 @@ $env:MEMMY_CUBEROUTER_URL          # 启动前确认一眼
 
 两种写法都只影响当前控制台且被 exe 继承，所以立刻生效、不用注销、不污染全局。
 
-想固化成双击即用，在 PowerShell 里跑这段，会在桌面生成 `memmy-test.cmd`（之后再改就是编辑这个文件）：
-
-```powershell
-@'
-@echo off
-set MEMMY_CUBEROUTER_URL=https://test.cuberouter.cn
-set MEMMY_CUBEROUTER_MODEL=kimi-k3-a
-start "" "C:\Users\skeee\Downloads\memmy-agent\App\shell\desktop\release\win-unpacked\Memmy.exe"
-'@ | Set-Content -Encoding ASCII "$env:USERPROFILE\Desktop\memmy-test.cmd"
-```
+想固化成双击即用：仓库里已提交 `scripts/run-win-local.cmd` —— 就是上面 cmd 那几行的固化版，exe 路径用 `%~dp0` 相对定位，repo 克隆到哪都能跑。改变量 = 编辑这个文件里的两行 `set`。
 
 注意赋值语句本身**没有回显**，所以启动前单独敲一行 `$env:MEMMY_CUBEROUTER_URL` 确认；四行必须在同一个窗口里。路径带空格时末尾命令的 `&` 不能省。
 
