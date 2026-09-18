@@ -259,5 +259,6 @@ start "" "C:\Users\skeee\Downloads\memmy-agent\App\shell\desktop\release\win-unp
 | 8 | 2026-09-18 | Windows 打包版 | 三行 `.env` 后重跑 | 过了 manifest（5m04s），死在 better-sqlite3 预编译包下载：`ECONNRESET` + 超时，重试全挂 | 打包日志 | 网络问题 → **K8**，加 `MEMMY_PACKAGE_MIRROR=cn` 重跑 |
 | 9 | 2026-09-18 | Windows 打包版 | 带镜像重跑 | 镜像生效（better-sqlite3 装好、native rebuild 通过），一路走到 electron-builder（7m00s），死在 `EBUSY ... v8_context_snapshot.bin` | 打包日志 | 在跑的 `win-unpacked\Memmy.exe` 锁住了旧目录 → **K9**，关进程 + 删目录后重跑 |
 | 10 | 2026-09-18 | Windows 打包版 | 用 `set` 设变量后启动，打开注册页 | 页面**毫无变化**；`main.log` 里 `registration requirements probe failed ... 无法连接 cuberouter 服务` | `main.log` | **K6 第二次**：PowerShell 的 `set` 不设环境变量 → 探测打到 `127.0.0.1:3000` → 静默回退。改用 `$env:` 即可（探测代码本身没问题）。同时暴露了"静默回退"这个设计失误，已修 |
+| 11 | 2026-09-18 | Windows 打包版 → test.cuberouter.cn | 用 `$env:` 启动 → 注册（含邮箱验证码）| **注册登录成功，进入主界面**。`config.yaml` 验证通过：`apiBase: https://test.cuberouter.cn/v1`、preset `model: kimi-k3-a` / `source: byok` / 三个 capabilities、`modelAssignments.byok.agent.default` 与 `agents.defaults.modelPreset` 均指向该 preset、`account.*` 全空、`app.userMode: byok` | `config.yaml` | **全链路打通**：注册 → 登录 → JWT → 建 token → 取明文 key → 写模型配置。残留：模型名是占位符，待换成实例上真实存在的 |
 
 > 记法：**结果**只写观察到的事实，**结论**写判断和下一步。失败就把 `main.log` 的最后一段贴进来或指个位置。
