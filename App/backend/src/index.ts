@@ -5,7 +5,6 @@ import type { AddressInfo } from "node:net";
 import { createDefaultAgentAdapterRegistry, type AgentAdapterRegistry } from "./adapters/outbound/agent-adapter/index.js";
 import { createAppStateStore } from "./infrastructure/app-state-store/index.js";
 import { createHttpCloudClient, type CloudClient } from "./adapters/outbound/cloud-client/index.js";
-import { createHttpCuberouterClient } from "./adapters/outbound/cuberouter-client/index.js";
 import {
   createHttpMemoryClient,
   type MemoryClient,
@@ -22,6 +21,7 @@ import {
   ensureMemoryScanPreferences
 } from "./infrastructure/memmy-config/agent-access.js";
 import { readCuberouterSettings } from "./infrastructure/memmy-config/cuberouter-access.js";
+import { resolveCuberouterNodes } from "./config/cuberouter-nodes.js";
 import { createPermissionManager } from "./permission/index.js";
 import { createLocalApiServer } from "./adapters/inbound/local-api/server.js";
 import { createBackendServices, type BootstrapScenario } from "./services/index.js";
@@ -125,10 +125,6 @@ export async function createLocalBackend(options: CreateLocalBackendOptions): Pr
     );
     const cuberouterSettings = await readCuberouterSettings(memmyConfigPath);
     const cuberouterConfig = resolveCuberouterClientConfig(process.env, cuberouterSettings);
-    const cuberouterClient = createHttpCuberouterClient({
-      baseUrl: cuberouterConfig.baseUrl,
-      timeoutMs: cuberouterConfig.timeoutMs
-    });
     const agentAdapterRegistry =
       options.agentAdapterRegistry ??
       createDefaultAgentAdapterRegistry({
@@ -146,7 +142,7 @@ export async function createLocalBackend(options: CreateLocalBackendOptions): Pr
       memmyConfigWriter,
       memmyConfigPath,
       scanPreferencesStore,
-      cuberouterClient,
+      cuberouterNodes: resolveCuberouterNodes({ env: process.env, settings: cuberouterSettings }),
       cuberouterConfig,
       memmyAgentAdminClient: options.memmyAgentAdminClient,
       memmyAgentAdminBootstrapSecret: await readAgentGatewayBootstrapSecret(memmyConfigPath)

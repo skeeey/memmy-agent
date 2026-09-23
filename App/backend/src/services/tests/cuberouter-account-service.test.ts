@@ -14,7 +14,8 @@ function fakeClient(overrides: Partial<CuberouterClient> = {}): CuberouterClient
     })),
     getRegistrationRequirements: vi.fn(async () => ({
       emailVerificationRequired: false,
-      turnstileRequired: false
+      turnstileRequired: false,
+      serverAddress: "http://127.0.0.1:3000"
     })),
     sendEmailVerificationCode: vi.fn(async () => undefined),
     listTokens: vi.fn(async () => []),
@@ -37,6 +38,89 @@ function fakeRepository() {
   };
 }
 
+const TWO_NODES = [
+  { id: "cn", url: "https://cn.example" },
+  { id: "hk", url: "https://hk.example" }
+];
+
+/** The shape every pre-node-table test assumes: one line, one client, one repository. */
+function singleNodeService(client: CuberouterClient, repository: any) {
+  return createTestService({
+    nodes: [{ id: "default", url: "http://127.0.0.1:3000" }],
+    client,
+    repository
+  });
+}
+
+/**
+ * Builds the service against a fake node world: one client per URL (each recording its own
+ * calls through the `on*` hooks), an in-memory line memory, and a stubbed router that never
+ * touches the network.
+ */
+function createTestService(input: {
+  nodes: Array<{ id: string; url: string }>;
+  client?: CuberouterClient;
+  clientsByUrl?: Record<string, CuberouterClient>;
+  repository?: any;
+  rememberedNodeId?: string | null;
+  preferredNodeId?: string | null;
+  probeDefaultNodeId?: string | null;
+  onRegister?: (url: string) => void;
+  onLogin?: (url: string) => void;
+  onRequirements?: (url: string) => void;
+  onRemember?: (username: string, nodeId: string) => void;
+}) {
+  const remembered = new Map<string, string>();
+  if (input.rememberedNodeId) remembered.set("alice", input.rememberedNodeId);
+  let preferred = input.preferredNodeId ?? null;
+  const { repository } = input.repository
+    ? { repository: input.repository }
+    : fakeRepository();
+  const clientFor = (url: string): CuberouterClient =>
+    input.clientsByUrl?.[url]
+    ?? ({
+      register: async () => {
+        input.onRegister?.(url);
+      },
+      login: async () => {
+        input.onLogin?.(url);
+        return { accessToken: `jwt-${url}`, userId: "7", username: "alice", displayName: "Alice" };
+      },
+      getRegistrationRequirements: async () => {
+        input.onRequirements?.(url);
+        return { emailVerificationRequired: false, turnstileRequired: false, serverAddress: url };
+      },
+      sendEmailVerificationCode: async () => undefined,
+      listTokens: async () => [{ id: 3, name: "memmy-desktop" }],
+      createToken: async () => undefined,
+      getTokenKey: async () => "sk-plain",
+      getSelf: async () => ({ userId: "7", username: "alice", displayName: "Alice", quota: 0 })
+    } satisfies CuberouterClient);
+
+  return createCuberouterAccountService({
+    clientFor: (url) => input.client ?? clientFor(url),
+    accountSessionRepository: repository,
+    accountNodes: {
+      get: (username: string) => remembered.get(username.trim()) ?? null,
+      set: (username: string, nodeId: string) => {
+        remembered.set(username.trim(), nodeId);
+        input.onRemember?.(username, nodeId);
+      }
+    },
+    nodeRouter: {
+      probe: async () => ({ entries: [], defaultNodeId: input.probeDefaultNodeId ?? null }),
+      listNodes: () => input.nodes,
+      getNodeUrl: (nodeId: string) => input.nodes.find((node) => node.id === nodeId)?.url ?? null,
+      getPreferredNodeId: async () => preferred,
+      setPreferredNodeId: async (nodeId: string) => {
+        preferred = nodeId;
+      }
+    },
+    model: "deepseek-flash",
+    log: () => undefined
+  });
+}
+
 describe("cuberouter account service", () => {
   it("registers then logs in and provisions a fresh key", async () => {
     // A fresh account lists no token, and the token created below shows up on the
@@ -45,12 +129,7 @@ describe("cuberouter account service", () => {
       listTokens: vi.fn().mockResolvedValueOnce([]).mockResolvedValue([{ id: 3, name: "memmy-desktop" }])
     });
     const { repository, upsert } = fakeRepository();
-    const service = createCuberouterAccountService({
-      client,
-      accountSessionRepository: repository,
-      baseUrl: "http://127.0.0.1:3000",
-      model: "deepseek-flash"
-    });
+    const service = singleNodeService(client, repository);
 
     const result = await service.register({ username: "alice", password: "Passw0rd1" });
 
@@ -75,12 +154,7 @@ describe("cuberouter account service", () => {
   it("forwards the email verification fields the instance asked for", async () => {
     const client = fakeClient({ listTokens: vi.fn(async () => [{ id: 3, name: "memmy-desktop" }]) });
     const { repository } = fakeRepository();
-    const service = createCuberouterAccountService({
-      client,
-      accountSessionRepository: repository,
-      baseUrl: "http://127.0.0.1:3000",
-      model: "deepseek-flash"
-    });
+    const service = singleNodeService(client, repository);
 
     await service.register({
       username: "alice",
@@ -105,12 +179,7 @@ describe("cuberouter account service", () => {
       }))
     });
     const { repository } = fakeRepository();
-    const service = createCuberouterAccountService({
-      client,
-      accountSessionRepository: repository,
-      baseUrl: "http://127.0.0.1:3000",
-      model: "deepseek-flash"
-    });
+    const service = singleNodeService(client, repository);
 
     await expect(service.getRegistrationRequirements()).resolves.toEqual({
       emailVerificationRequired: true,
@@ -129,12 +198,7 @@ describe("cuberouter account service", () => {
       })
     });
     const { repository } = fakeRepository();
-    const service = createCuberouterAccountService({
-      client,
-      accountSessionRepository: repository,
-      baseUrl: "http://127.0.0.1:3000",
-      model: "deepseek-flash"
-    });
+    const service = singleNodeService(client, repository);
 
     await expect(service.getRegistrationRequirements()).rejects.toMatchObject({
       code: "cuberouter_unavailable"
@@ -150,12 +214,7 @@ describe("cuberouter account service", () => {
       })
     });
     const { repository } = fakeRepository();
-    const service = createCuberouterAccountService({
-      client,
-      accountSessionRepository: repository,
-      baseUrl: "http://127.0.0.1:3000",
-      model: "deepseek-flash"
-    });
+    const service = singleNodeService(client, repository);
 
     await expect(service.sendEmailVerificationCode("alice@example.com")).rejects.toMatchObject({
       code: "rate_limited",
@@ -168,12 +227,7 @@ describe("cuberouter account service", () => {
       listTokens: vi.fn(async () => [{ id: 3, name: "memmy-desktop" }])
     });
     const { repository } = fakeRepository();
-    const service = createCuberouterAccountService({
-      client,
-      accountSessionRepository: repository,
-      baseUrl: "http://127.0.0.1:3000",
-      model: "deepseek-flash"
-    });
+    const service = singleNodeService(client, repository);
 
     const result = await service.login({ username: "alice", password: "Passw0rd1" });
 
@@ -185,12 +239,7 @@ describe("cuberouter account service", () => {
   it("fails when the freshly created token cannot be listed", async () => {
     const client = fakeClient({ listTokens: vi.fn(async () => []) });
     const { repository } = fakeRepository();
-    const service = createCuberouterAccountService({
-      client,
-      accountSessionRepository: repository,
-      baseUrl: "http://127.0.0.1:3000",
-      model: "deepseek-flash"
-    });
+    const service = singleNodeService(client, repository);
 
     await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
       code: "invalid_argument"
@@ -204,12 +253,7 @@ describe("cuberouter account service", () => {
       })
     });
     const { repository } = fakeRepository();
-    const service = createCuberouterAccountService({
-      client,
-      accountSessionRepository: repository,
-      baseUrl: "http://127.0.0.1:3000",
-      model: "deepseek-flash"
-    });
+    const service = singleNodeService(client, repository);
 
     await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
       code: "invalid_argument",
@@ -224,12 +268,7 @@ describe("cuberouter account service", () => {
       })
     });
     const { repository } = fakeRepository();
-    const service = createCuberouterAccountService({
-      client,
-      accountSessionRepository: repository,
-      baseUrl: "http://127.0.0.1:3000",
-      model: "deepseek-flash"
-    });
+    const service = singleNodeService(client, repository);
 
     await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
       code: "cuberouter_unavailable",
@@ -240,14 +279,120 @@ describe("cuberouter account service", () => {
   it("clears the local session on logout without calling cuberouter", async () => {
     const client = fakeClient();
     const { repository } = fakeRepository();
-    const service = createCuberouterAccountService({
-      client,
-      accountSessionRepository: repository,
-      baseUrl: "http://127.0.0.1:3000",
-      model: "deepseek-flash"
-    });
+    const service = singleNodeService(client, repository);
 
     await expect(service.logout()).resolves.toEqual({ ok: true });
     expect(repository.clear).toHaveBeenCalled();
+  });
+
+  it("registers on the node the caller picked, and remembers it", async () => {
+    const registeredOn: string[] = [];
+    const remembered: Array<[string, string]> = [];
+    const service = createTestService({
+      nodes: TWO_NODES,
+      onRegister: (url) => registeredOn.push(url),
+      onRemember: (username, nodeId) => remembered.push([username, nodeId])
+    });
+
+    await service.register({ username: "alice", password: "Passw0rd1", nodeId: "hk" });
+
+    expect(registeredOn).toEqual(["https://hk.example"]);
+    expect(remembered).toEqual([["alice", "hk"]]);
+  });
+
+  it("rejects a node id that is not in the table", async () => {
+    const service = createTestService({ nodes: [{ id: "cn", url: "https://cn.example" }] });
+
+    await expect(service.register({ username: "alice", password: "Passw0rd1", nodeId: "mars" }))
+      .rejects.toMatchObject({ code: "invalid_argument" });
+  });
+
+  it("logs in on the remembered node first, and falls back to the other one", async () => {
+    const attempts: string[] = [];
+    const service = createTestService({
+      nodes: TWO_NODES,
+      rememberedNodeId: "cn",
+      onLogin: (url) => {
+        attempts.push(url);
+        if (url === "https://cn.example") {
+          throw Object.assign(new Error("无法连接"), { code: "service_unavailable" as const });
+        }
+      }
+    });
+
+    const result = await service.login({ username: "alice", password: "Passw0rd1" });
+
+    expect(attempts).toEqual(["https://cn.example", "https://hk.example"]);
+    expect(result.session.authenticated).toBe(true);
+    expect(result.provisioning.apiBase).toBe("https://hk.example/v1");
+  });
+
+  it("stops after two attempts even when a third line exists", async () => {
+    const attempts: string[] = [];
+    const service = createTestService({
+      nodes: [
+        { id: "cn", url: "https://cn.example" },
+        { id: "hk", url: "https://hk.example" },
+        { id: "jp", url: "https://jp.example" }
+      ],
+      rememberedNodeId: "cn",
+      preferredNodeId: "hk",
+      probeDefaultNodeId: "jp",
+      onLogin: (url) => {
+        attempts.push(url);
+        throw Object.assign(new Error("用户名或密码错误"), { code: "rejected" as const });
+      }
+    });
+
+    await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toBeDefined();
+
+    // Remembered, then the current line — the probed default is never dialed.
+    expect(attempts).toEqual(["https://cn.example", "https://hk.example"]);
+  });
+
+  it("surfaces the last failure when neither node accepts the credentials", async () => {
+    const service = createTestService({
+      nodes: TWO_NODES,
+      onLogin: () => {
+        throw Object.assign(new Error("用户名或密码错误"), { code: "rejected" as const });
+      }
+    });
+
+    await expect(service.login({ username: "alice", password: "Passw0rd1" }))
+      .rejects.toMatchObject({ code: "invalid_argument", message: "用户名或密码错误" });
+  });
+
+  it("ignores a remembered or current line that is no longer in the table", async () => {
+    const attempts: string[] = [];
+    const service = createTestService({
+      nodes: [{ id: "hk", url: "https://hk.example" }],
+      // Both were persisted when the table still had a mainland node.
+      rememberedNodeId: "cn",
+      preferredNodeId: "cn",
+      onLogin: (url) => attempts.push(url)
+    });
+
+    await service.login({ username: "alice", password: "Passw0rd1" });
+
+    expect(attempts).toEqual(["https://hk.example"]);
+  });
+
+  it("reads the registration requirements from the line the caller is looking at", async () => {
+    const asked: string[] = [];
+    const service = createTestService({
+      nodes: TWO_NODES,
+      onRequirements: (url) => asked.push(url)
+    });
+
+    await expect(service.getRegistrationRequirements("hk")).resolves.toMatchObject({
+      serverAddress: "https://hk.example"
+    });
+    expect(asked).toEqual(["https://hk.example"]);
+  });
+
+  it("reports both lines and the one in effect", async () => {
+    const service = createTestService({ nodes: TWO_NODES, preferredNodeId: "hk" });
+
+    await expect(service.getNodes()).resolves.toEqual({ nodes: ["cn", "hk"], currentNodeId: "hk" });
   });
 });

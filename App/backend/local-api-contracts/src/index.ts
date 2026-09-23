@@ -1180,9 +1180,30 @@ export const CuberouterAuthInputSchema = z.object({
     /** 仅当目标实例开启邮箱验证时携带；登录不需要。 */
     email: z.string().trim().email().max(50).optional(),
     /** 与 email 成对出现，来自目标实例发出的验证码邮件。 */
-    verificationCode: z.string().trim().min(1).max(20).optional()
+    verificationCode: z.string().trim().min(1).max(20).optional(),
+    /** 注册时选定的线路；缺省时后端使用探测默认值。 */
+    nodeId: z.string().trim().min(1).max(32).optional()
 });
 export type CuberouterAuthInput = z.infer<typeof CuberouterAuthInputSchema>;
+
+/** 线路查询参数：读取某个具体节点的注册要求。 */
+export const CuberouterNodeIdQuerySchema = z.object({
+    nodeId: z.string().trim().min(1).max(32).optional()
+});
+
+/** 配置的线路与当前生效的那一条。 */
+export const CuberouterNodesViewSchema = z.object({
+    nodes: z.array(z.string()),
+    currentNodeId: z.string().nullable()
+});
+export type CuberouterNodesView = z.infer<typeof CuberouterNodesViewSchema>;
+
+/** 探测结果：首次注册默认该用哪条线路（null = 都没探到）。 */
+export const CuberouterNodeProbeViewSchema = z.object({
+    nodes: z.array(z.string()),
+    defaultNodeId: z.string().nullable()
+});
+export type CuberouterNodeProbeView = z.infer<typeof CuberouterNodeProbeViewSchema>;
 
 /** 定义注册前从目标实例探测到的注册要求，用于决定注册表单的形态。 */
 export const CuberouterRegistrationRequirementsSchema = z.object({

@@ -1,12 +1,17 @@
 /** Cuberouter account service module. */
-import type { CuberouterAuthInput, CuberouterAuthResult } from "@memmy/local-api-contracts";
+import type {
+  CuberouterAuthInput,
+  CuberouterAuthResult
+} from "@memmy/local-api-contracts";
 import type {
   CuberouterClient,
   CuberouterErrorCode,
   CuberouterRegistrationRequirements
 } from "../adapters/outbound/cuberouter-client/index.js";
 import type { AccountSessionRepository } from "../infrastructure/app-state-store/repositories/account-session-repo.js";
+import type { CuberouterAccountNodeRepository } from "../infrastructure/app-state-store/repositories/cuberouter-account-node-repo.js";
 import type { ApiErrorCode } from "./error-envelope.js";
+import { FALLBACK_NODE_ID, type CuberouterNodeRouter } from "./cuberouter-node-router.js";
 
 const CUBEROUTER_ERROR_CODES: Record<CuberouterErrorCode, ApiErrorCode> = {
   two_factor_required: "invalid_argument",
@@ -38,23 +43,30 @@ function toApiError(error: unknown): Error {
 export const MEMORY_DESKTOP_TOKEN_NAME = "memmy-desktop";
 
 export interface CuberouterAccountService {
-  register(input: CuberouterAuthInput): Promise<CuberouterAuthResult>;
+  register(input: CuberouterAuthInput & { nodeId?: string }): Promise<CuberouterAuthResult>;
   login(input: { username: string; password: string }): Promise<CuberouterAuthResult>;
   /** Probes the target instance so the form matches what it will accept. */
-  getRegistrationRequirements(): Promise<CuberouterRegistrationRequirements>;
+  getRegistrationRequirements(nodeId?: string): Promise<CuberouterRegistrationRequirements>;
   sendEmailVerificationCode(email: string): Promise<{ ok: true }>;
+  /** The configured lines and the one currently in effect. */
+  getNodes(): Promise<{ nodes: string[]; currentNodeId: string | null }>;
+  /** Measures every line and reports which one a first registration should use. */
+  probeNodes(): Promise<{ nodes: string[]; defaultNodeId: string | null }>;
   logout(): Promise<{ ok: true }>;
 }
 
 export interface CreateCuberouterAccountServiceOptions {
-  /** cuberouter REST client. */
-  client: CuberouterClient;
+  /** Builds a client for one node's URL. */
+  clientFor: (url: string) => CuberouterClient;
   /** Account session repository. */
   accountSessionRepository: AccountSessionRepository;
-  /** cuberouter base URL without trailing slash; the model API base appends /v1. */
-  baseUrl: string;
+  /** Which line each account was registered on. */
+  accountNodes: CuberouterAccountNodeRepository;
+  /** Node table, probing and the current line. */
+  nodeRouter: CuberouterNodeRouter;
   /** Fixed model provisioned for the desktop. */
   model: string;
+  log?: (message: string) => void;
 }
 
 /** Handles to cuberouter account uuid. */
@@ -66,11 +78,66 @@ export function toCuberouterAccountUuid(userId: string): string {
 export function createCuberouterAccountService(
   options: CreateCuberouterAccountServiceOptions
 ): CuberouterAccountService {
-  const provisioningApiBase = `${options.baseUrl.replace(/\/+$/, "")}/v1`;
+  const log = options.log ?? (() => undefined);
 
-  async function completeLogin(username: string, password: string): Promise<CuberouterAuthResult> {
-    const session = await options.client.login({ username, password });
-    const apiKey = await ensureApiKey(session.accessToken);
+  /** Resolves a node id to its URL and client. An id outside the table is a caller bug. */
+  function clientForNode(nodeId: string): { client: CuberouterClient; url: string } {
+    const url = options.nodeRouter.getNodeUrl(nodeId);
+    if (!url) {
+      throw Object.assign(new Error("未知的线路"), { code: "invalid_argument" as const });
+    }
+    return { client: options.clientFor(url), url };
+  }
+
+  /** Where a first registration should go when the caller did not pick: the probed default. */
+  async function defaultNodeId(): Promise<string> {
+    const probed = (await options.nodeRouter.probe()).defaultNodeId;
+    if (options.nodeRouter.getNodeUrl(probed ?? "")) {
+      return probed!;
+    }
+    // Nothing to probe (both lines down) falls back to the build's default line, and a
+    // single-node table (pinned URL) has only itself to offer.
+    if (options.nodeRouter.getNodeUrl(FALLBACK_NODE_ID)) {
+      return FALLBACK_NODE_ID;
+    }
+    return options.nodeRouter.listNodes()[0]?.id ?? FALLBACK_NODE_ID;
+  }
+
+  /** The line a returning caller is already on: the stored one, else the probed default. */
+  async function currentOrProbedNodeId(): Promise<string> {
+    const preferred = await options.nodeRouter.getPreferredNodeId();
+    return options.nodeRouter.getNodeUrl(preferred ?? "") ? preferred! : await defaultNodeId();
+  }
+
+  /**
+   * Login candidates, most likely first: the remembered line, the current line, then the
+   * probed default and the build's fallback. Only the first two are tried — the two deployments
+   * hold separate accounts, so a third attempt would only add latency and login rate-limit risk.
+   */
+  async function loginOrder(username: string): Promise<string[]> {
+    const candidates = [
+      options.accountNodes.get(username),
+      await options.nodeRouter.getPreferredNodeId(),
+      (await options.nodeRouter.probe()).defaultNodeId,
+      FALLBACK_NODE_ID,
+      // Last resort: whatever the table actually holds. A single-node build (or a pinned URL)
+      // has none of the ids above, and its one line is still the right answer.
+      ...options.nodeRouter.listNodes().map((node) => node.id)
+    ];
+    return [...new Set(candidates)]
+      .filter((nodeId): nodeId is string => Boolean(nodeId) && options.nodeRouter.getNodeUrl(nodeId!) !== null)
+      .slice(0, 2);
+  }
+
+  /** Runs one login against one node and records it as the account's line. */
+  async function loginOnNode(
+    nodeId: string,
+    username: string,
+    password: string
+  ): Promise<CuberouterAuthResult> {
+    const { client, url } = clientForNode(nodeId);
+    const session = await client.login({ username, password });
+    const apiKey = await ensureApiKey(client, session.accessToken);
     const projection = options.accountSessionRepository.upsert({
       uuid: toCuberouterAccountUuid(session.userId),
       cloudUuid: session.accessToken,
@@ -95,72 +162,114 @@ export function createCuberouterAccountService(
         }
       }
     });
+    options.accountNodes.set(username, nodeId);
+    await options.nodeRouter.setPreferredNodeId(nodeId);
+    log(`[cuberouter] ${username} is on ${nodeId} (${url})`);
 
     return {
       session: projection,
-      provisioning: { apiKey, apiBase: provisioningApiBase, model: options.model }
+      provisioning: { apiKey, apiBase: `${url}/v1`, model: options.model }
     };
   }
 
-  async function ensureApiKey(accessToken: string): Promise<string> {
-    const existing = await findToken(accessToken);
+  async function ensureApiKey(client: CuberouterClient, accessToken: string): Promise<string> {
+    const existing = await findToken(client, accessToken);
     if (existing) {
-      return options.client.getTokenKey(accessToken, existing.id);
+      return client.getTokenKey(accessToken, existing.id);
     }
 
-    await options.client.createToken(accessToken, { name: MEMORY_DESKTOP_TOKEN_NAME });
+    await client.createToken(accessToken, { name: MEMORY_DESKTOP_TOKEN_NAME });
     // cuberouter does not return the id of the token it just created, so the list has
     // to be read again to find it.
-    const created = await findToken(accessToken);
+    const created = await findToken(client, accessToken);
     if (!created) {
       throw Object.assign(new Error("cuberouter 未返回新建的令牌"), { code: "rejected" as const });
     }
-    return options.client.getTokenKey(accessToken, created.id);
+    return client.getTokenKey(accessToken, created.id);
   }
 
-  async function findToken(accessToken: string) {
-    const tokens = await options.client.listTokens(accessToken);
+  async function findToken(client: CuberouterClient, accessToken: string) {
+    const tokens = await client.listTokens(accessToken);
     return tokens.find((token) => token.name === MEMORY_DESKTOP_TOKEN_NAME) ?? null;
   }
 
   return {
     async register(input) {
+      // Resolved once, before the try: the account must be created and then logged into on the
+      // SAME node, and an unknown node id has to keep its own error code (the adapter mapping
+      // below only knows cuberouter's codes and would fold anything else into internal).
+      const nodeId = input.nodeId ?? await defaultNodeId();
+      const { client, url } = clientForNode(nodeId);
+
       try {
-        await options.client.register({
+        await client.register({
           username: input.username,
           password: input.password,
           ...(input.email ? { email: input.email } : {}),
           ...(input.verificationCode ? { verificationCode: input.verificationCode } : {})
         });
-        return await completeLogin(input.username, input.password);
+        return await loginOnNode(nodeId, input.username, input.password);
       } catch (error) {
+        log(`[cuberouter] register/login on ${url} failed: ${error instanceof Error ? error.message : String(error)}`);
         throw toApiError(error);
       }
     },
 
-    async getRegistrationRequirements() {
+    async getRegistrationRequirements(nodeId) {
+      // The two deployments can differ (email verification, Turnstile), so this reads the line
+      // the caller is looking at rather than whatever was read last.
+      const { client } = clientForNode(nodeId ?? await currentOrProbedNodeId());
       try {
-        return await options.client.getRegistrationRequirements();
+        return await client.getRegistrationRequirements();
       } catch (error) {
         throw toApiError(error);
       }
     },
 
     async sendEmailVerificationCode(email) {
+      const { client } = clientForNode(await currentOrProbedNodeId());
       try {
-        await options.client.sendEmailVerificationCode(email);
+        await client.sendEmailVerificationCode(email);
         return { ok: true as const };
       } catch (error) {
         throw toApiError(error);
       }
     },
 
+    async getNodes() {
+      const nodes = options.nodeRouter.listNodes().map((node) => node.id);
+      const preferred = await options.nodeRouter.getPreferredNodeId();
+      return { nodes, currentNodeId: preferred && nodes.includes(preferred) ? preferred : null };
+    },
+
+    async probeNodes() {
+      const nodes = options.nodeRouter.listNodes().map((node) => node.id);
+      return { nodes, defaultNodeId: (await options.nodeRouter.probe()).defaultNodeId };
+    },
+
     async login(input) {
-      try {
-        return await completeLogin(input.username, input.password);
-      } catch (error) {
-        throw toApiError(error);
+      const order = await loginOrder(input.username);
+      if (order.length === 0) {
+        throw Object.assign(new Error("没有可用的 cuberouter 线路"), { code: "invalid_argument" as const });
       }
+
+      let lastError: Error | null = null;
+      for (const nodeId of order) {
+        try {
+          return await loginOnNode(nodeId, input.username, input.password);
+        } catch (error) {
+          lastError = toApiError(error);
+          log(
+            `[cuberouter] login on ${nodeId} failed, trying the next line: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }
+
+      // Same shape the desktop shows today: with separate accounts per node, a rejection on
+      // both sides means wrong credentials just as often as it means the wrong line.
+      throw lastError ?? Object.assign(new Error("cuberouter 登录失败"), { code: "internal" as const });
     },
 
     async logout() {
