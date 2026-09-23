@@ -177,6 +177,34 @@ turnstile_check     = False
 - 测试：`nickname.test.ts` 谓词双分支 + `product-tour.test.tsx` 接线断言（AppRouter 无组件测试底座，与"cuberouter 去掉工具步"同法）。桌面 166 文件 / 1565 全绿。
 - 真机验证：引导在每台机器只跑一次，已跑完的机器看不到差别。用 `scripts/clear-win-app-data.cmd` 清掉 `%APPDATA%\Memmy` 后注册新账号，走完导览应**直接进主界面、显示注册用户名**，无昵称弹窗。
 
+### F8 引导完成状态不持久：每次登录重放产品导览
+
+**现象**：注册 → 走完引导 → 退出登录 → 重新登录，**又出现产品导览**（且是从导览开始，不是从扫描权限）。
+
+**取证**（`%APPDATA%\Memmy\app.sqlite`，只读查询）：
+
+```
+local-byok-onboarding: has_finished_guide=1, completed_at=2026-09-20T07:38:27Z   ← 完成写在这
+cuberouter:10113:      has_finished_guide=0, current_step=scan_permission_required  ← 登录后读的是这行
+user_mode=byok, active_uuid=cuberouter:10113
+```
+
+**根因（两个独立缺陷叠加）**
+
+1. **作用域缺陷**（后端 `resolveOnboardingUuidWithDefaults`）：引导行按 `user_mode` 选 —— 只有**严格等于** `"byok"` 才用 `local-byok-onboarding`，`unset`（schema 默认值！）和 `account` 都落到 **active_uuid 那一行**。cuberouter 是"账号身份 + byok 模式"：完成写进了 local 行，而任何 `user_mode ≠ byok` 的启动读的是 `cuberouter:<id>` 行（永远未完成）。`unset` 时 `resolveInitialView` 还会直接落 `/welcome`——这也解释了"重启后为什么回到登录页"。
+2. **陈旧快照缺陷**（前端 `continueAfterAuth`）：路由用**登录前**的 bootstrap 快照算，而它刚刚把模式写成 byok —— 本可以读回权威值（`updateOnboarding({})` 返回的就是全量重读）却没用，于是作用域不一致立刻变成"每次登录重放"。
+
+两者叠加后，`first_encounter_report_status=shown` + 本地 `guidanceCompleted` 会让前端**跳过扫描/报告直接进产品导览**，与观察完全一致。
+
+**已实现（2026-09-23）**
+
+- 后端：`resolveOnboardingUuidWithDefaults` 加一条 —— **active_uuid 是 cuberouter 身份（`cuberouter:` 前缀）时，引导一律用自己的账号行**，不再看 `user_mode`；云账号路径不变。
+- 前端：`persistLoginModeSelection` 返回读回的 onboarding，`continueAfterAuth` 用它（合并后）算路由，不再用登录前快照。
+
+**升级代价（一次性）**：修好后 cuberouter 账号的引导改记在账号行，**旧的 local 行完成记录不再被认**——所以下次启动还会走一遍引导，走完即固化，之后不再重放。
+
+- 测试：后端 +1（882 文件级 881），桌面 +1（1566），双向 typecheck 干净。
+
 ---
 
 ## 2. 联调记录
@@ -265,5 +293,6 @@ $env:MEMMY_CUBEROUTER_URL          # 启动前确认一眼
 | 10 | 2026-09-18 | Windows 打包版 | 用 `set` 设变量后启动，打开注册页 | 页面**毫无变化**；`main.log` 里 `registration requirements probe failed ... 无法连接 cuberouter 服务` | `main.log` | **K6 第二次**：PowerShell 的 `set` 不设环境变量 → 探测打到 `127.0.0.1:3000` → 静默回退。改用 `$env:` 即可（探测代码本身没问题）。同时暴露了"静默回退"这个设计失误，已修 |
 | 11 | 2026-09-18 | Windows 打包版 → test.cuberouter.cn | 用 `$env:` 启动 → 注册（含邮箱验证码）| **注册登录成功，进入主界面**。`config.yaml` 验证通过：`apiBase: https://test.cuberouter.cn/v1`、preset `model: kimi-k3-a` / `source: byok` / 三个 capabilities、`modelAssignments.byok.agent.default` 与 `agents.defaults.modelPreset` 均指向该 preset、`account.*` 全空、`app.userMode: byok` | `config.yaml` | **全链路打通**：注册 → 登录 → JWT → 建 token → 取明文 key → 写模型配置。残留：模型名是占位符，待换成实例上真实存在的 |
 | 12 | 2026-09-18 | Windows 打包版 → test.cuberouter.cn | 注册成功后切到登录页登录 | **登录被前端拦下**：「请输入有效的邮箱地址」，但登录表单上根本没有邮箱框 | 页面反馈 | **真 bug**：面板把实例级探测结果 `emailVerificationRequired=true` 在登录模式也传给了校验器，而邮箱/验证码框只在注册模式渲染 → 登录永远过不了校验。已修（三个字段全部按 `mode === "register"` 收窄，与 confirmPassword 同一模式），回归测试钉死 |
+| 13 | 2026-09-23 | Windows 打包版 → test.cuberouter.cn | 注册 → 走完引导 → 退出登录 → 再登录 | **产品导览又出现**；引导本该"每台机器一次" | `app.sqlite` 只读查询（引导行 + `app_settings`） | **真 bug，两个缺陷叠加**：① 引导行按 `user_mode` 选作用域（`unset`/`account` 都读账号行），完成写进了 local 行、读取却落在 `cuberouter:<id>` 行；② 登录后的路由用的是**登录前**的 bootstrap 快照。已修（作用域按身份 + 路由用读回值），见 **F8** |
 
 > 记法：**结果**只写观察到的事实，**结论**写判断和下一步。失败就把 `main.log` 的最后一段贴进来或指个位置。

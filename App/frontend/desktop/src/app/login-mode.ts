@@ -13,8 +13,20 @@ export interface PersistLoginModeSelectionInput {
   onboarding?: Partial<OnboardingStateDto>;
 }
 
+/** Contract for persist login mode selection result. */
+export interface PersistLoginModeSelectionResult {
+  /**
+   * The onboarding state as the backend read it back after the mode was saved. Callers that
+   * route must prefer this over any value captured before the login: the pre-login snapshot
+   * may have been read in a different scope than the one this login writes into.
+   */
+  onboarding?: Partial<OnboardingStateDto>;
+}
+
 /** Handles persist login mode selection. */
-export async function persistLoginModeSelection(input: PersistLoginModeSelectionInput): Promise<void> {
+export async function persistLoginModeSelection(
+  input: PersistLoginModeSelectionInput
+): Promise<PersistLoginModeSelectionResult> {
   const settingsPatch = { userMode: input.userMode };
   const savedSettings = await saveSettingsPatch(input.configClient, settingsPatch);
   const modelConfig = input.userMode === "account"
@@ -36,11 +48,12 @@ export async function persistLoginModeSelection(input: PersistLoginModeSelection
   if (modelConfig) input.dispatch(appActions.modelConfigUpdated(modelConfig));
 
   if (!input.onboarding) {
-    return;
+    return {};
   }
 
   const savedOnboarding = await saveOnboardingPatch(input.configClient, input.onboarding);
   input.dispatch(appActions.onboardingUpdated(savedOnboarding));
+  return { onboarding: savedOnboarding };
 }
 
 /** Loads the post-login canonical model catalog required before account-mode rendering. */

@@ -188,17 +188,21 @@ export function AccountAuthPanel() {
 
     try {
       setContinuing(true);
-      await persistLoginModeSelection({
+      const persisted = await persistLoginModeSelection({
         configClient: clients.config,
         dispatch,
         userMode: "byok",
         onboarding: onboardingPatch
       });
       setPendingAuthResult(null);
-      // The self-test warning never changes routing: a new user runs onboarding, a returning
-      // user follows the onboarding state already persisted on this machine.
+      // Route on the state the backend just read back, not on the snapshot taken before the
+      // login: that snapshot may have been scoped to a different account row, which is how a
+      // completed account came back as "not completed" and replayed the guidance.
       dispatch(appActions.navigate(
-        resolvePostLoginRoute({ onboarding: nextOnboarding, preferredMode: state.navigation.preferredMode })
+        resolvePostLoginRoute({
+          onboarding: { ...nextOnboarding, ...(persisted.onboarding ?? {}) },
+          preferredMode: state.navigation.preferredMode
+        })
       ));
     } catch (error) {
       console.error("persist byok mode failed", error);

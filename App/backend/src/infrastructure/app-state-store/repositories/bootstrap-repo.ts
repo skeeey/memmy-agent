@@ -522,15 +522,23 @@ function toSqlInputValue(value: unknown): SQLInputValue {
  * @returns the uuid used for onboarding.
  */
 function resolveOnboardingUuidWithDefaults(db: DatabaseSync): string {
-  if (!isByokUserMode(db)) {
-    const uuid = getActiveUuidWithDefaults(db);
-    if (uuid) {
-      return uuid;
-    }
+  const activeUuid = getActiveUuidWithDefaults(db);
+  // A cuberouter identity is a signed-in account that happens to run in byok mode. Its
+  // onboarding belongs to its own row: scoping it by userMode instead let a completion
+  // written while the mode was byok (the local row) be read back as unfinished by any
+  // launch that hydrated another mode — "unset" is the schema default — so the guidance
+  // replayed. Cloud accounts keep the mode-based rule below.
+  if (activeUuid && (isCuberouterAccountUuid(activeUuid) || !isByokUserMode(db))) {
+    return activeUuid;
   }
 
   ensureLocalOnboardingDefaults(db);
   return LOCAL_BYOK_ACCOUNT_UUID;
+}
+
+/** Reads whether an account uuid belongs to a cuberouter identity (`cuberouter:<userId>`). */
+function isCuberouterAccountUuid(uuid: string): boolean {
+  return uuid.startsWith("cuberouter:");
 }
 
 /**

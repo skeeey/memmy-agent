@@ -2100,6 +2100,42 @@ describe("bootstrap repository writes", () => {
     });
   });
 
+  it("keeps a signed-in cuberouter account's onboarding on its own row", () => {
+    // A cuberouter identity is a signed-in account that runs in byok mode. Scoping the
+    // onboarding row by userMode put the completion in the local row while a launch that
+    // hydrated any other mode ("unset" is the schema default) read the account row back as
+    // unfinished — so the guidance replayed on every launch.
+    tempDir = mkdtempSync(join(tmpdir(), "memmy-app-state-"));
+    const databasePath = join(tempDir, "app.sqlite");
+    const store = createAppStateStore({ databasePath });
+    const now = new Date().toISOString();
+
+    store.db.prepare("INSERT INTO cloud_accounts (uuid, user_id, created_at, updated_at) VALUES (?, ?, ?, ?)")
+      .run("cuberouter:10113", "10113", now, now);
+    store.db.prepare("UPDATE app_settings SET active_uuid = 'cuberouter:10113', user_mode = 'byok' WHERE id = 'default'").run();
+
+    // What the desktop does once the account signs in.
+    store.repositories.bootstrap.updateOnboarding({
+      currentStep: "completed",
+      completed: true,
+      completedAt: "2026-09-20T07:38:27.621Z"
+    });
+    // The next launch may hydrate any mode; the completion must not depend on which.
+    store.db.prepare("UPDATE app_settings SET user_mode = 'unset' WHERE id = 'default'").run();
+    const accountRow = store.db
+      .prepare("SELECT has_finished_guide FROM account_onboarding_state WHERE uuid = ?")
+      .get("cuberouter:10113") as { has_finished_guide: number } | undefined;
+    const onboarding = store.repositories.bootstrap.getOnboardingState();
+    store.close();
+
+    expect(accountRow?.has_finished_guide).toBe(1);
+    expect(onboarding).toMatchObject({
+      completed: true,
+      currentStep: "completed",
+      completedAt: "2026-09-20T07:38:27.621Z"
+    });
+  });
+
   it("patches app settings, privacy, and onboarding without overwriting omitted fields", () => {
     tempDir = mkdtempSync(join(tmpdir(), "memmy-app-state-"));
     const databasePath = join(tempDir, "app.sqlite");

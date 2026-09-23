@@ -92,6 +92,41 @@ describe("AccountAuthPanel auth error copy", () => {
     expect(alertText()).toBe(message);
   });
 
+  it("routes on the onboarding state read back after login, not the pre-login snapshot", async () => {
+    // A launch can read the onboarding in a different scope than the one the completion was
+    // written to, so the snapshot taken before login may say "not completed" about an account
+    // that is. The value written and read back during login is the authoritative one.
+    mocks.state = createStaleOnboardingState();
+    const updateOnboarding = vi.fn(async (onboarding: unknown) => ({
+      ...(onboarding as object),
+      completed: true,
+      currentStep: "completed",
+      completedAt: "2026-09-20T07:38:27.621Z"
+    }));
+    mocks.clients = {
+      account: {
+        getRegistrationRequirements: vi.fn(async () => ({ emailVerificationRequired: false, turnstileRequired: false })),
+        login: vi.fn(async () => authResult({ isNewUser: false }))
+      },
+      config: {
+        getModelConfig: vi.fn(async () => emptyProviderConfig()),
+        saveModelCatalog: vi.fn(async () => emptyProviderConfig()),
+        testModelConfig: vi.fn(async () => ({ ok: true, message: "ok", checkedAt: "2026-09-16T00:00:00.000Z" })),
+        updateSettings: vi.fn(async (settings: unknown) => settings),
+        updateOnboarding
+      }
+    } as unknown as AppClients;
+
+    await act(async () => root.render(<AccountAuthPanel />));
+    await clickButton("account.switchToLogin");
+    await fillInput(0, "alice");
+    await fillInput(1, "Passw0rd1");
+    await clickButton("account.login");
+
+    await vi.waitFor(() => expect(mocks.dispatch).toHaveBeenCalledWith(appActions.navigate("/main")));
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(appActions.navigate("/onboarding"));
+  });
+
   it("keeps a returning user's completed onboarding and routes to /main", async () => {
     mocks.state = createCompletedOnboardingState();
     const updateOnboarding = vi.fn(async (onboarding: unknown) => onboarding);
@@ -422,6 +457,21 @@ function createCompletedOnboardingState(): AppState {
       completed: true,
       currentStep: "completed" as const,
       completedAt: "2026-09-01T00:00:00.000Z"
+    }
+  };
+  return appReducer(createInitialAppState(), appActions.bootstrapLoaded(bootstrap, "/welcome"));
+}
+
+/** The snapshot a launch reads when its onboarding scope differs from the one the completion landed in. */
+function createStaleOnboardingState(): AppState {
+  const bootstrap = {
+    ...mockBootstrap,
+    app: { ...mockBootstrap.app, userMode: "byok" as const },
+    onboarding: {
+      ...mockBootstrap.onboarding,
+      completed: false,
+      currentStep: "scan_permission_required" as const,
+      completedAt: null
     }
   };
   return appReducer(createInitialAppState(), appActions.bootstrapLoaded(bootstrap, "/welcome"));
