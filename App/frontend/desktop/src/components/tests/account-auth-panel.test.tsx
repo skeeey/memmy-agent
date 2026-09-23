@@ -118,7 +118,6 @@ describe("AccountAuthPanel auth error copy", () => {
     } as unknown as AppClients;
 
     await act(async () => root.render(<AccountAuthPanel />));
-    await clickButton("account.switchToLogin");
     await fillInput(0, "alice");
     await fillInput(1, "Passw0rd1");
     await clickButton("account.login");
@@ -145,7 +144,6 @@ describe("AccountAuthPanel auth error copy", () => {
     } as unknown as AppClients;
 
     await act(async () => root.render(<AccountAuthPanel />));
-    await clickButton("account.switchToLogin");
     await fillInput(0, "alice");
     await fillInput(1, "Passw0rd1");
     await clickButton("account.login");
@@ -172,6 +170,7 @@ describe("AccountAuthPanel auth error copy", () => {
     } as unknown as AppClients;
 
     await act(async () => root.render(<AccountAuthPanel />));
+    await switchToRegister();
     await fillInput(0, "alice");
     await fillInput(1, "Passw0rd1");
     await fillInput(2, "Passw0rd1");
@@ -209,6 +208,7 @@ describe("AccountAuthPanel auth error copy", () => {
     } as unknown as AppClients;
 
     await act(async () => root.render(<AccountAuthPanel />));
+    await switchToRegister();
     await fillInput(0, "alice");
     await fillInput(1, "Passw0rd1");
     await fillInput(2, "Passw0rd1");
@@ -221,9 +221,24 @@ describe("AccountAuthPanel auth error copy", () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(appActions.navigate("/onboarding"));
   });
 
+  it("opens on the login form with the register link below it", async () => {
+    renderPanel({ registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false } });
+
+    expect(buttonByLabel("account.login")).not.toBeNull();
+    expect(buttonByLabel("account.register")).toBeNull();
+    expect(buttonByLabel("account.switchToRegister")).not.toBeNull();
+    // The register-only fields stay out of the first screen.
+    expect(inputByPlaceholder("account.confirmPasswordPlaceholder")).toBeNull();
+    // The toggle reaches the register form, which then offers the way back.
+    await switchToRegister();
+    expect(buttonByLabel("account.register")).not.toBeNull();
+    expect(buttonByLabel("account.switchToLogin")).not.toBeNull();
+  });
+
   it("adds the email inputs when the instance requires email verification", async () => {
     renderPanel({ registrationRequirements: { emailVerificationRequired: true, turnstileRequired: false } });
 
+    await switchToRegister();
     await vi.waitFor(() => expect(inputByPlaceholder("account.emailPlaceholder")).not.toBeNull());
     expect(inputByPlaceholder("account.verificationCodePlaceholder")).not.toBeNull();
     expect(buttonByLabel("account.sendCode")).not.toBeNull();
@@ -232,6 +247,7 @@ describe("AccountAuthPanel auth error copy", () => {
   it("leaves the form untouched when the instance does not verify email", async () => {
     renderPanel({ registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false } });
 
+    await switchToRegister();
     // The probe resolves asynchronously; give it the chance to (wrongly) add fields.
     await act(async () => await Promise.resolve());
     expect(inputByPlaceholder("account.emailPlaceholder")).toBeNull();
@@ -245,6 +261,7 @@ describe("AccountAuthPanel auth error copy", () => {
     const message = "无法连接 cuberouter 服务，请检查服务地址与网络";
     renderPanel({ requirementsError: new ApiRequestError(message, 503, "cuberouter_unavailable") });
 
+    await switchToRegister();
     await vi.waitFor(() => expect(alertText()).toBe(message));
     expect(inputByPlaceholder("account.emailPlaceholder")).toBeNull();
   });
@@ -258,6 +275,7 @@ describe("AccountAuthPanel auth error copy", () => {
       register
     });
 
+    await switchToRegister();
     await vi.waitFor(() => expect(inputByPlaceholder("account.emailPlaceholder")).not.toBeNull());
     await setInput("account.usernamePlaceholder", "alice");
     await setInput("account.emailPlaceholder", "alice@example.com");
@@ -284,6 +302,7 @@ describe("AccountAuthPanel auth error copy", () => {
       sendEmailVerificationCode
     });
 
+    await switchToRegister();
     await vi.waitFor(() => expect(inputByPlaceholder("account.emailPlaceholder")).not.toBeNull());
     await setInput("account.emailPlaceholder", "alice@example.com");
     await clickButton("account.sendCode");
@@ -302,6 +321,7 @@ describe("AccountAuthPanel auth error copy", () => {
       })
     });
 
+    await switchToRegister();
     await vi.waitFor(() => expect(inputByPlaceholder("account.emailPlaceholder")).not.toBeNull());
     await setInput("account.emailPlaceholder", "alice@example.com");
     await clickButton("account.sendCode");
@@ -325,6 +345,9 @@ describe("AccountAuthPanel auth error copy", () => {
       login
     });
 
+    // Wait for the probe through the register form: the email input appearing is what proves
+    // the instance's answer landed, so the login assertions below are not just "not yet known".
+    await switchToRegister();
     await vi.waitFor(() => expect(inputByPlaceholder("account.emailPlaceholder")).not.toBeNull());
     await clickButton("account.switchToLogin");
     expect(inputByPlaceholder("account.emailPlaceholder")).toBeNull();
@@ -335,6 +358,11 @@ describe("AccountAuthPanel auth error copy", () => {
     // An exact-match assertion: no email or verificationCode may ride along.
     await vi.waitFor(() => expect(login).toHaveBeenCalledWith({ username: "alice", password: "Passw0rd1" }));
   });
+
+  /** Moves the card from its login default to the register form. */
+  async function switchToRegister() {
+    await clickButton("account.switchToRegister");
+  }
 
   /** Renders the panel against a fake account client carrying the given probe outcome. */
   function renderPanel(input: {
@@ -398,7 +426,6 @@ describe("AccountAuthPanel auth error copy", () => {
     } as unknown as AppClients;
 
     await act(async () => root.render(<AccountAuthPanel />));
-    await clickButton("account.switchToLogin");
     await fillInput(0, "alice");
     await fillInput(1, "Passw0rd1");
     await clickButton("account.login");

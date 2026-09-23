@@ -24,7 +24,9 @@ export function AccountAuthPanel() {
   const { t, language } = useTranslation();
   const auth = useAccountAuth();
   const code = useEmailVerificationCode();
-  const [mode, setMode] = useState<"register" | "login">("register");
+  // Login first: a returning user opens this card far more often than a new one, and the
+  // register link sits right below the button for the rest.
+  const [mode, setMode] = useState<"register" | "login">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");

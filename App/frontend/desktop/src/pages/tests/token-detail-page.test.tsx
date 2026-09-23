@@ -21,7 +21,8 @@ describe("TokenDetailPage", () => {
     expect(html).toContain("覆盖全功能");
     expect(html).toContain("用户名");
     expect(html).toContain("密码");
-    expect(html).toContain("注册并开始使用");
-    expect(html).toContain("已有账号？去登录");
+    // The card opens on the login form, with the register link below it.
+    expect(html).toContain(">登录</button>");
+    expect(html).toContain("没有账号？去注册");
   });
 });

@@ -294,5 +294,6 @@ $env:MEMMY_CUBEROUTER_URL          # 启动前确认一眼
 | 11 | 2026-09-18 | Windows 打包版 → test.cuberouter.cn | 用 `$env:` 启动 → 注册（含邮箱验证码）| **注册登录成功，进入主界面**。`config.yaml` 验证通过：`apiBase: https://test.cuberouter.cn/v1`、preset `model: kimi-k3-a` / `source: byok` / 三个 capabilities、`modelAssignments.byok.agent.default` 与 `agents.defaults.modelPreset` 均指向该 preset、`account.*` 全空、`app.userMode: byok` | `config.yaml` | **全链路打通**：注册 → 登录 → JWT → 建 token → 取明文 key → 写模型配置。残留：模型名是占位符，待换成实例上真实存在的 |
 | 12 | 2026-09-18 | Windows 打包版 → test.cuberouter.cn | 注册成功后切到登录页登录 | **登录被前端拦下**：「请输入有效的邮箱地址」，但登录表单上根本没有邮箱框 | 页面反馈 | **真 bug**：面板把实例级探测结果 `emailVerificationRequired=true` 在登录模式也传给了校验器，而邮箱/验证码框只在注册模式渲染 → 登录永远过不了校验。已修（三个字段全部按 `mode === "register"` 收窄，与 confirmPassword 同一模式），回归测试钉死 |
 | 13 | 2026-09-23 | Windows 打包版 → test.cuberouter.cn | 注册 → 走完引导 → 退出登录 → 再登录 | **产品导览又出现**；引导本该"每台机器一次" | `app.sqlite` 只读查询（引导行 + `app_settings`） | **真 bug，两个缺陷叠加**：① 引导行按 `user_mode` 选作用域（`unset`/`account` 都读账号行），完成写进了 local 行、读取却落在 `cuberouter:<id>` 行；② 登录后的路由用的是**登录前**的 bootstrap 快照。已修（作用域按身份 + 路由用读回值），见 **F8** |
+| 14 | 2026-09-23 | Windows 打包版 | 反馈：首屏应该是**登录**，注册放下面当链接 | 已改：`AccountAuthPanel` 默认模式 `register` → **`login`**；注册入口就是按钮下方的「没有账号？去注册」 | 代码 | 一处默认值。表单本身双向对称、两句切换文案早就写好；改动波及 3 个测试文件（原来都假设注册优先），除适配外新增一条钉住"首屏=登录 + 切换可达注册"的用例 |
 
 > 记法：**结果**只写观察到的事实，**结论**写判断和下一步。失败就把 `main.log` 的最后一段贴进来或指个位置。

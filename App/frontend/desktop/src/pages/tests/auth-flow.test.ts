@@ -107,8 +107,7 @@ describe("auth flow", () => {
   it("登录模式走 login 桩，不在注册接口上重试", async () => {
     const server = createAuthServer(order);
     mocks.clients = server.client;
-    await renderPanel();
-    await clickButton("account.switchToLogin");
+    await renderPanel("login");
     await fillCredentials();
     await clickButton("account.login");
 
@@ -166,8 +165,12 @@ describe("auth flow", () => {
     expect(server.registerUsernames()).toEqual(["alice", "bob"]);
   });
 
-  async function renderPanel() {
+  async function renderPanel(mode: "login" | "register" = "register") {
     await act(async () => root.render(createElement(AccountAuthPanel)));
+    // The card opens on login; the register flow has to ask for its form first.
+    if (mode === "register") {
+      await clickButton("account.switchToRegister");
+    }
   }
 
   async function fillCredentials() {
