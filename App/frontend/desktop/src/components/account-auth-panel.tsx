@@ -1,6 +1,6 @@
 /** Account auth panel module. */
 import type { CuberouterAuthResult, OnboardingStateDto } from "@memmy/local-api-contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { setAnalyticsUserId } from "../analytics/analytics-context.js";
 import { useAnalytics } from "../analytics/use-analytics.js";
 import { buildInvitationSignupEvent } from "../app/invitation-analytics.js";
@@ -55,7 +55,13 @@ export function AccountAuthPanel() {
           return;
         }
         setNodes(probe.nodes);
-        setNodeId(probe.defaultNodeId ?? probe.nodes[0] ?? null);
+        // Never preselect something the picker does not offer: a stale or unknown id would
+        // silently submit a line the user cannot see.
+        setNodeId(
+          probe.defaultNodeId && probe.nodes.includes(probe.defaultNodeId)
+            ? probe.defaultNodeId
+            : probe.nodes[0] ?? null
+        );
       } catch (error) {
         console.warn("cuberouter node probe failed", error);
         if (!cancelled) {
@@ -75,6 +81,7 @@ export function AccountAuthPanel() {
   // The instance decides the form's shape, so ask it instead of guessing: a mismatch here
   // is what produced "email verification is enabled" only after a doomed submit. It is asked
   // per line, because the two deployments can demand different things.
+  const lastRequirementsLine = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (!clients?.account) {
       return undefined;
@@ -85,6 +92,13 @@ export function AccountAuthPanel() {
         const requirements = await clients.account.getRegistrationRequirements(nodeId ?? undefined);
         if (cancelled) {
           return;
+        }
+        // Only a change of line invalidates the previous verdict — clearing on every run would
+        // also wipe the model self-check's warning, which this effect knows nothing about.
+        const lineChanged = lastRequirementsLine.current !== nodeId;
+        lastRequirementsLine.current = nodeId;
+        if (lineChanged) {
+          setWarning(null);
         }
         setEmailVerificationRequired(requirements.emailVerificationRequired);
         if (requirements.turnstileRequired) {
@@ -116,14 +130,16 @@ export function AccountAuthPanel() {
   async function sendVerificationCode() {
     setWarning(null);
     auth.clearFeedback();
-    const outcome = await code.send(email);
+    const outcome = await code.send(email, nodeId ?? undefined);
     if (!outcome.ok && outcome.text) {
       auth.setFailure({ text: outcome.text, tone: "error" });
     }
   }
 
   async function submit() {
-    if (auth.pending || continuing || probingLine) return;
+    // The line only matters when registering; blocking login on it would make the button do
+    // nothing at all for a user who never chose a line.
+    if (auth.pending || continuing || (mode === "register" && probingLine)) return;
     setWarning(null);
     if (pendingAuthResult) {
       await continueAfterAuth(pendingAuthResult);
@@ -266,6 +282,7 @@ export function AccountAuthPanel() {
         verificationCode={verificationCode}
         nodes={nodes}
         selectedNodeId={nodeId}
+        probingLine={mode === "register" && probingLine}
         sendingCode={code.sending}
         codeSecondsLeft={code.secondsLeft}
         disabled={auth.pending || continuing || (mode === "register" && probingLine)}

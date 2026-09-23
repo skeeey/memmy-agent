@@ -120,7 +120,7 @@ export interface UseEmailVerificationCodeResult {
   sending: boolean;
   secondsLeft: number;
   /** Resolves with the failure copy to show, or `{ ok: true }` once the instance accepted it. */
-  send(email: string): Promise<{ ok: boolean; text?: string }>;
+  send(email: string, nodeId?: string): Promise<{ ok: boolean; text?: string }>;
 }
 
 /** Drives the "send verification code" button and its cooldown. */
@@ -141,7 +141,7 @@ export function useEmailVerificationCode(): UseEmailVerificationCodeResult {
   }, [secondsLeft]);
 
   const send = useCallback(
-    async (email: string) => {
+    async (email: string, nodeId?: string) => {
       if (!isEmailLike(email)) {
         return { ok: false, text: t("account.error.email") };
       }
@@ -151,7 +151,11 @@ export function useEmailVerificationCode(): UseEmailVerificationCodeResult {
 
       setSending(true);
       try {
-        await clients.account.sendEmailVerificationCode({ email: email.trim() });
+        // The code has to come from the line the account will be created on.
+        await clients.account.sendEmailVerificationCode({
+          email: email.trim(),
+          ...(nodeId ? { nodeId } : {})
+        });
         setSecondsLeft(EMAIL_CODE_COOLDOWN_SECONDS);
         return { ok: true };
       } catch (error) {

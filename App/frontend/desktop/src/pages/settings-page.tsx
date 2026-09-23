@@ -86,6 +86,7 @@ import {
 } from "./model-config.js";
 import { ValidationMessage } from "./api-key-form-fields.js";
 import { OverflowTooltipText } from "../components/overflow-tooltip-text.js";
+import { nodeDisplayName } from "../i18n/messages.js";
 import type { MessageKey, MessageValues } from "../i18n/messages.js";
 
 type LogLevel = "error" | "warn" | "info" | "debug";
@@ -1377,7 +1378,7 @@ export function SettingsPageView(props: SettingsPageViewProps) {
                   )}
                   {currentNodeId ? (
                     <div className="settings-account-line text-text-ink/45">
-                      {t("settings.account.line", { value: t(`account.node.${currentNodeId}` as MessageKey) })}
+                      {t("settings.account.line", { value: nodeDisplayName(currentNodeId, t) })}
                     </div>
                   ) : null}
                 </div>

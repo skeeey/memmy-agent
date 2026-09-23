@@ -47,7 +47,8 @@ export interface CuberouterAccountService {
   login(input: { username: string; password: string }): Promise<CuberouterAuthResult>;
   /** Probes the target instance so the form matches what it will accept. */
   getRegistrationRequirements(nodeId?: string): Promise<CuberouterRegistrationRequirements>;
-  sendEmailVerificationCode(email: string): Promise<{ ok: true }>;
+  /** Asks the target instance to email a verification code, for the line the caller picked. */
+  sendEmailVerificationCode(email: string, nodeId?: string): Promise<{ ok: true }>;
   /** The configured lines and the one currently in effect. */
   getNodes(): Promise<{ nodes: string[]; currentNodeId: string | null }>;
   /** Measures every line and reports which one a first registration should use. */
@@ -91,21 +92,27 @@ export function createCuberouterAccountService(
 
   /**
    * Applies the build's fallback rule to a probe result: nothing reachable means the default
-   * line, and a single-node table (pinned URL) has only itself to offer.
+   * line, and a single-node table (pinned URL) has only itself to offer. Returns null when the
+   * table holds nothing usable — a caller that cannot offer any line must say so, never name one
+   * that does not exist.
    */
-  function withFallback(probed: string | null): string {
+  function withFallback(probed: string | null): string | null {
     if (options.nodeRouter.getNodeUrl(probed ?? "")) {
       return probed!;
     }
     if (options.nodeRouter.getNodeUrl(FALLBACK_NODE_ID)) {
       return FALLBACK_NODE_ID;
     }
-    return options.nodeRouter.listNodes()[0]?.id ?? FALLBACK_NODE_ID;
+    return options.nodeRouter.listNodes()[0]?.id ?? null;
   }
 
   /** Where a first registration should go when the caller did not pick: the probed default. */
   async function defaultNodeId(): Promise<string> {
-    return withFallback((await options.nodeRouter.probe()).defaultNodeId);
+    const resolved = withFallback((await options.nodeRouter.probe()).defaultNodeId);
+    if (!resolved) {
+      throw Object.assign(new Error("没有可用的 cuberouter 线路"), { code: "invalid_argument" as const });
+    }
+    return resolved;
   }
 
   /** The line a returning caller is already on: the stored one, else the probed default. */
@@ -120,17 +127,23 @@ export function createCuberouterAccountService(
    * hold separate accounts, so a third attempt would only add latency and login rate-limit risk.
    */
   async function loginOrder(username: string): Promise<string[]> {
-    const candidates = [
+    const inTable = (nodeId: string | null | undefined): nodeId is string =>
+      Boolean(nodeId) && options.nodeRouter.getNodeUrl(nodeId!) !== null;
+    const known = [
       options.accountNodes.get(username),
-      await options.nodeRouter.getPreferredNodeId(),
-      (await options.nodeRouter.probe()).defaultNodeId,
-      FALLBACK_NODE_ID,
-      // Last resort: whatever the table actually holds. A single-node build (or a pinned URL)
-      // has none of the ids above, and its one line is still the right answer.
-      ...options.nodeRouter.listNodes().map((node) => node.id)
-    ];
-    return [...new Set(candidates)]
-      .filter((nodeId): nodeId is string => Boolean(nodeId) && options.nodeRouter.getNodeUrl(nodeId!) !== null)
+      await options.nodeRouter.getPreferredNodeId()
+    ].filter(inTable);
+
+    // With a line already known the first slot is decided, and the second is whatever else the
+    // table holds — measuring the lines could not change the order, so it must not cost the user
+    // its latency (up to four status calls) before the first login attempt.
+    if (known.length > 0) {
+      return [...new Set([...known, ...options.nodeRouter.listNodes().map((node) => node.id)])].slice(0, 2);
+    }
+
+    const probed = withFallback((await options.nodeRouter.probe()).defaultNodeId);
+    return [...new Set([probed, FALLBACK_NODE_ID, ...options.nodeRouter.listNodes().map((node) => node.id)])]
+      .filter(inTable)
       .slice(0, 2);
   }
 
@@ -231,8 +244,10 @@ export function createCuberouterAccountService(
       }
     },
 
-    async sendEmailVerificationCode(email) {
-      const { client } = clientForNode(await currentOrProbedNodeId());
+    async sendEmailVerificationCode(email, nodeId) {
+      // The code is instance-local, so it must be requested from the line the account will be
+      // created on — the current line would produce a code the selected one cannot validate.
+      const { client } = clientForNode(nodeId ?? await currentOrProbedNodeId());
       try {
         await client.sendEmailVerificationCode(email);
         return { ok: true as const };

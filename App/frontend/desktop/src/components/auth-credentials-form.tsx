@@ -1,4 +1,5 @@
 /** Auth credentials form module. */
+import { nodeDisplayName } from "../i18n/messages.js";
 import { useTranslation } from "../i18n/use-translation.js";
 
 /** Contract for auth credentials form props. */
@@ -13,6 +14,8 @@ export interface AuthCredentialsFormProps {
   /** Lines a new account may be registered on; the picker appears only when there is a choice. */
   nodes?: string[];
   selectedNodeId?: string | null;
+  /** True while the registration lines are being measured; the submit button says so. */
+  probingLine?: boolean;
   onNodeChange?: (nodeId: string) => void;
   email?: string;
   verificationCode?: string;
@@ -69,7 +72,7 @@ export function AuthCredentialsForm(props: AuthCredentialsFormProps) {
                   disabled={props.disabled}
                   onChange={() => props.onNodeChange?.(id)}
                 />
-                {t(`account.node.${id}` as Parameters<typeof t>[0])}
+                {nodeDisplayName(id, t)}
               </label>
             ))}
           </div>
@@ -181,7 +184,9 @@ export function AuthCredentialsForm(props: AuthCredentialsFormProps) {
         onClick={props.onSubmit}
         className="w-full py-3 bg-action-sky text-white font-semibold rounded-btn hover:bg-action-sky-hover transition-all cursor-pointer shadow-md hover:shadow-lg active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {props.mode === "register" ? t("account.register") : t("account.login")}
+        {props.mode === "register"
+          ? props.probingLine ? t("account.probingLine") : t("account.register")
+          : t("account.login")}
       </button>
 
       <button

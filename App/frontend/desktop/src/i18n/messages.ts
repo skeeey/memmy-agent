@@ -236,6 +236,7 @@ export const zhCNMessages = {
   "account.line": "注册线路",
   "account.node.cn": "大陆",
   "account.node.hk": "香港",
+  "account.node.default": "默认线路",
   "account.probingLine": "正在检测线路…",
   "settings.account.line": "当前线路：{value}",
   "account.error.username": "请输入用户名（不超过 50 个字符）",
@@ -1895,6 +1896,7 @@ export const enUSMessages: Record<keyof typeof zhCNMessages, string> = {
   "account.line": "Registration line",
   "account.node.cn": "Mainland China",
   "account.node.hk": "Hong Kong",
+  "account.node.default": "Default line",
   "account.probingLine": "Detecting the line…",
   "settings.account.line": "Line: {value}",
   "account.error.username": "Enter a username (up to 50 characters)",
@@ -3330,6 +3332,16 @@ export const enUSMessages: Record<keyof typeof zhCNMessages, string> = {
 };
 
 export type MessageKey = keyof typeof zhCNMessages;
+
+/**
+ * Display name of a cuberouter line. A build can be configured with a node id this bundle has
+ * no copy for (a pinned URL, or a deployment added later), and an unknown id must read as
+ * itself rather than as an empty label.
+ */
+export function nodeDisplayName(nodeId: string, t: (key: MessageKey) => string): string {
+  const key = `account.node.${nodeId}`;
+  return Object.prototype.hasOwnProperty.call(zhCNMessages, key) ? t(key as MessageKey) : nodeId;
+}
 
 export type MessageValues = Record<string, string | number>;
 

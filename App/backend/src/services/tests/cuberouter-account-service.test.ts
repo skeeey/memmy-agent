@@ -69,10 +69,12 @@ function createTestService(input: {
   onLogin?: (url: string) => void;
   onRequirements?: (url: string) => void;
   onRemember?: (username: string, nodeId: string) => void;
+  onProbe?: () => void;
 }) {
   const remembered = new Map<string, string>();
   if (input.rememberedNodeId) remembered.set("alice", input.rememberedNodeId);
   let preferred = input.preferredNodeId ?? null;
+  let probeCalls = 0;
   const { repository } = input.repository
     ? { repository: input.repository }
     : fakeRepository();
@@ -108,7 +110,11 @@ function createTestService(input: {
       }
     },
     nodeRouter: {
-      probe: async () => ({ entries: [], defaultNodeId: input.probeDefaultNodeId ?? null }),
+      probe: async () => {
+        probeCalls += 1;
+        input.onProbe?.();
+        return { entries: [], defaultNodeId: input.probeDefaultNodeId ?? null };
+      },
       listNodes: () => input.nodes,
       getNodeUrl: (nodeId: string) => input.nodes.find((node) => node.id === nodeId)?.url ?? null,
       getPreferredNodeId: async () => preferred,
@@ -390,6 +396,34 @@ describe("cuberouter account service", () => {
     expect(asked).toEqual(["https://hk.example"]);
   });
 
+  it("sends the verification code through the line the account will be created on", async () => {
+    // The code is instance-local: asking the current line for it while the user registers on
+    // the other one produces a code that line cannot validate, so registration can never finish.
+    const asked: string[] = [];
+    const clientsByUrl = Object.fromEntries(TWO_NODES.map((node) => [node.url, {
+      register: async () => undefined,
+      login: async () => ({ accessToken: "jwt", userId: "7", username: "alice", displayName: "Alice" }),
+      getRegistrationRequirements: async () => ({
+        emailVerificationRequired: true,
+        turnstileRequired: false,
+        serverAddress: node.url
+      }),
+      sendEmailVerificationCode: async () => {
+        asked.push(node.url);
+      },
+      listTokens: async () => [{ id: 3, name: "memmy-desktop" }],
+      createToken: async () => undefined,
+      getTokenKey: async () => "sk-plain",
+      getSelf: async () => ({ userId: "7", username: "alice", displayName: "Alice", quota: 0 })
+    }])) as never;
+    // The machine's current line is cn; the user picks hk for the new account.
+    const service = createTestService({ nodes: TWO_NODES, clientsByUrl, preferredNodeId: "cn" });
+
+    await service.sendEmailVerificationCode("alice@example.com", "hk");
+
+    expect(asked).toEqual(["https://hk.example"]);
+  });
+
   it("reports both lines and the one in effect", async () => {
     const service = createTestService({ nodes: TWO_NODES, preferredNodeId: "hk" });
 
@@ -400,5 +434,46 @@ describe("cuberouter account service", () => {
     const service = createTestService({ nodes: TWO_NODES, probeDefaultNodeId: null });
 
     await expect(service.probeNodes()).resolves.toEqual({ nodes: ["cn", "hk"], defaultNodeId: "hk" });
+  });
+
+  it("never names a line the table does not have, and says so plainly when there is none", async () => {
+    // Defensive: the wiring always supplies at least the resolved default line, so an empty
+    // table means a caller passed one. Report it as "no line", never as a phantom id.
+    const service = createTestService({ nodes: [] });
+
+    await expect(service.probeNodes()).resolves.toEqual({ nodes: [], defaultNodeId: null });
+    await expect(service.register({ username: "alice", password: "Passw0rd1" }))
+      .rejects.toMatchObject({ code: "invalid_argument", message: "没有可用的 cuberouter 线路" });
+  });
+
+  it("does not measure the lines when the account already has one", async () => {
+    // A probe costs up to four status calls, and with a two-node table it cannot change the
+    // order once the first slot is decided: the second slot is the other node either way.
+    const attempts: string[] = [];
+    const probes: number[] = [];
+    const service = createTestService({
+      nodes: TWO_NODES,
+      rememberedNodeId: "cn",
+      onLogin: (url) => attempts.push(url),
+      onProbe: () => probes.push(1)
+    });
+
+    await service.login({ username: "alice", password: "Passw0rd1" });
+
+    expect(attempts).toEqual(["https://cn.example"]);
+    expect(probes).toEqual([]);
+  });
+
+  it("still measures the lines when nothing is known about the account", async () => {
+    const probes: number[] = [];
+    const service = createTestService({
+      nodes: TWO_NODES,
+      probeDefaultNodeId: "cn",
+      onProbe: () => probes.push(1)
+    });
+
+    await service.login({ username: "alice", password: "Passw0rd1" });
+
+    expect(probes).toHaveLength(1);
   });
 });

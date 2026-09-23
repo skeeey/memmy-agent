@@ -1216,7 +1216,9 @@ export type CuberouterRegistrationRequirements = z.infer<typeof CuberouterRegist
 
 /** 定义发送邮箱验证码的入参。 */
 export const CuberouterEmailCodeInputSchema = z.object({
-    email: z.string().trim().email().max(50)
+    email: z.string().trim().email().max(50),
+    /** 注册时选定的线路；验证码是实例本地的，必须向同一条线路索取。 */
+    nodeId: z.string().trim().min(1).max(32).optional()
 });
 export type CuberouterEmailCodeInput = z.infer<typeof CuberouterEmailCodeInputSchema>;
 

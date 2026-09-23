@@ -403,11 +403,64 @@ describe("AccountAuthPanel auth error copy", () => {
     });
 
     await switchToRegister();
-    expect(buttonByLabel("account.register")!.disabled).toBe(true);
+    // The button says why it cannot be used yet rather than looking broken.
+    expect(buttonByLabel("account.probingLine")!.disabled).toBe(true);
+    expect(buttonByLabel("account.register")).toBeNull();
 
     await act(async () => releaseProbe({ nodes: ["cn"], defaultNodeId: "cn" }));
     await vi.waitFor(() => expect(buttonByLabel("account.register")!.disabled).toBe(false));
     expect(radioByLabel("account.node.cn")).toBeNull();
+  });
+
+  it("never preselects a line the picker does not offer", async () => {
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "mars" }))
+    });
+
+    await switchToRegister();
+    await vi.waitFor(() => expect(radioByLabel("account.node.cn")).not.toBeNull());
+    expect(radioByLabel("account.node.cn")!.checked).toBe(true);
+    expect(radioByLabel("account.node.hk")!.checked).toBe(false);
+  });
+
+  it("drops a warning that belonged to the line the user just left", async () => {
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "hk" })),
+      getRegistrationRequirements: async (nodeId?: string) => ({
+        emailVerificationRequired: false,
+        turnstileRequired: nodeId === "hk"
+      })
+    });
+
+    await switchToRegister();
+    await vi.waitFor(() => expect(alertText()).toBe("account.warning.turnstileRequired"));
+
+    // cn needs nothing, so the hk verdict must not stay on screen and claim registration is impossible.
+    await act(async () => radioByLabel("account.node.cn")!.click());
+    await vi.waitFor(() => expect(alertText()).toBeNull());
+  });
+
+  it("asks the line the user picked for the verification code", async () => {
+    // The code is instance-local, so a code requested from the current line would be rejected
+    // by the line the account is actually being created on.
+    const sendEmailVerificationCode = vi.fn(async () => ({ ok: true }));
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: true, turnstileRequired: false },
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "cn" })),
+      sendEmailVerificationCode
+    });
+
+    await switchToRegister();
+    await vi.waitFor(() => expect(radioByLabel("account.node.cn")).not.toBeNull());
+    await act(async () => radioByLabel("account.node.hk")!.click());
+    await setInput("account.emailPlaceholder", "alice@example.com");
+    await clickButton("account.sendCode");
+
+    await vi.waitFor(() => expect(sendEmailVerificationCode).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "alice@example.com", nodeId: "hk" })
+    ));
   });
 
   it("logs in without email fields even when the instance verifies email at registration", async () => {

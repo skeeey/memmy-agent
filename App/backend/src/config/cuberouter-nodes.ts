@@ -26,18 +26,29 @@ export function parseCuberouterNodeTable(raw: string): CuberouterNode[] {
 /**
  * Resolves the table. An explicit `MEMMY_CUBEROUTER_URL` pins the build to that single node
  * (local development and the packaged test loop), and the config file replaces the environment
- * wholesale.
+ * wholesale. Nothing configured at all falls back to the resolved default URL, so a build
+ * without a table behaves exactly as every build did before the table existed.
  */
 export function resolveCuberouterNodes(input: {
   env: NodeJS.ProcessEnv;
   settings?: CuberouterSettings;
+  /** Already-resolved default line (env > config.yaml > localhost). */
+  defaultUrl: string;
 }): CuberouterNode[] {
   const pinned = input.env.MEMMY_CUBEROUTER_URL?.trim();
   if (pinned) {
-    return [{ id: "default", url: pinned.replace(/\/+$/, "") }];
+    return [{ id: "default", url: normalizeUrl(pinned) }];
   }
   if (input.settings?.nodes?.length) {
     return input.settings.nodes;
   }
-  return parseCuberouterNodeTable(input.env.MEMMY_CUBEROUTER_NODES ?? "");
+  const parsed = parseCuberouterNodeTable(input.env.MEMMY_CUBEROUTER_NODES ?? "");
+  if (parsed.length > 0) {
+    return parsed;
+  }
+  return [{ id: "default", url: normalizeUrl(input.defaultUrl) }];
+}
+
+function normalizeUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "");
 }

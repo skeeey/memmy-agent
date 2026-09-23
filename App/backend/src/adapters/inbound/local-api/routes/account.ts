@@ -89,7 +89,7 @@ export function registerAccountRoutes(app: FastifyInstance, options: RegisterAcc
     withErrorEnvelope(async (request, reply) => {
       const input = CuberouterEmailCodeInputSchema.parse(request.body);
       const response = OkResponseSchema.parse(
-        await options.cuberouterAccount.sendEmailVerificationCode(input.email)
+        await options.cuberouterAccount.sendEmailVerificationCode(input.email, input.nodeId)
       );
       return reply.send(response);
     })

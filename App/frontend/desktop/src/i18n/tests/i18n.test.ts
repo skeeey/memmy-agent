@@ -1,8 +1,17 @@
 /** I18n tests. */
-import { describe, expect, it } from "vitest";
-import { formatMessage, messageCatalogs, resolveLanguage } from "../messages.js";
+import { describe, expect, it, vi } from "vitest";
+import { formatMessage, messageCatalogs, nodeDisplayName, resolveLanguage } from "../messages.js";
 
 describe("desktop i18n helpers", () => {
+  it("names a known line through its copy and an unknown one as its own id", () => {
+    const translate = vi.fn((key: string) => `t:${key}`);
+
+    expect(nodeDisplayName("cn", translate)).toBe("t:account.node.cn");
+    expect(nodeDisplayName("default", translate)).toBe("t:account.node.default");
+    // A node this bundle has no copy for must still read as something, never as an empty label.
+    expect(nodeDisplayName("mars", translate)).toBe("mars");
+  });
+
   it("falls back to zh-CN when language follows system or is unsupported", () => {
     expect(resolveLanguage("system")).toBe("zh-CN");
     expect(resolveLanguage("en-US")).toBe("en-US");
