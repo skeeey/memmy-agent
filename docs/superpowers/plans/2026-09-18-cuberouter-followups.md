@@ -15,6 +15,8 @@
 
 ### F1 让 `config.yaml` 支持配置 cuberouter 地址与模型 ★
 
+**已实现（2026-09-23）**，作为多节点线路选择的地基：`App/backend/src/infrastructure/memmy-config/cuberouter-access.ts`（读 `cuberouter` 段 + 写 `baseUrl`）、`resolveCuberouterClientConfig(env, settings)` 优先级 **env > config.yaml > 默认值**。设计见 `docs/superpowers/specs/2026-09-23-multi-node-routing-design.md`，实施计划 `docs/superpowers/plans/2026-09-23-multi-node-routing.md`。
+
 **为什么**
 
 现在服务端地址只能从环境变量来——`resolveCuberouterClientConfig(process.env)` 是唯一入口（`App/backend/src/index.ts:125` → `App/backend/src/config/service-urls.ts:29`），`config.yaml` 里没有任何同类键。后果：
@@ -63,6 +65,8 @@ cuberouter:
 ### F2 打包版注入 `MEMMY_CUBEROUTER_*`（被 F1 挡着）
 
 原计划末尾记的残留项：`scripts/internal/shared/write-desktop-edition-manifest-lib.mjs` 的校验要求 HTTPS origin，会把本地默认值挡掉。F1 做完后可以用 `config.yaml` 承载默认值，这条要么改成"只注入生产 origin"，要么直接作废。
+
+**2026-09-23 更新**：多节点设计让这条有了明确形态 —— 需要注入 manifest 的是**节点表**（`MEMMY_CUBEROUTER_NODES=cn=…,hk=…`），而真实节点都是 https，manifest 的 HTTPS 校验不再挡路。等节点表正式定稿再做。
 
 ### F6 构建不该依赖 shell 里 export 过的 legal 变量
 
