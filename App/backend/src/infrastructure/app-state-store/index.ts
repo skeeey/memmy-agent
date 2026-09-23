@@ -10,6 +10,10 @@ import { runMigrations } from "./migration-runner.js";
 import { createAccountSessionRepository, type AccountSessionRepository } from "./repositories/account-session-repo.js";
 import { createBootstrapRepository, type BootstrapRepository } from "./repositories/bootstrap-repo.js";
 import { createByokTokenUsageRepository, type ByokTokenUsageRepository } from "./repositories/byok-token-usage-repo.js";
+import {
+  createCuberouterAccountNodeRepository,
+  type CuberouterAccountNodeRepository
+} from "./repositories/cuberouter-account-node-repo.js";
 import { createComposioMachineTokenRepository, type ComposioMachineTokenRepository } from "./repositories/composio-machine-token-repo.js";
 import { createDeviceIdentityRepository, type DeviceIdentityRepository } from "./repositories/device-identity-repo.js";
 import { finalizeDatabaseDesign } from "./schema-finalizer.js";
@@ -45,6 +49,8 @@ export interface AppStateStore {
     composioMachineToken: ComposioMachineTokenRepository;
     /** Byok token usage. */
     byokTokenUsage: ByokTokenUsageRepository;
+    /** Which cuberouter node each account was registered on. */
+    cuberouterAccountNode: CuberouterAccountNodeRepository;
     /** Installation-scoped device identity. */
     deviceIdentity: DeviceIdentityRepository;
   };
@@ -81,6 +87,7 @@ export function createAppStateStore(options: CreateAppStateStoreOptions = {}): A
       idempotency: createIdempotencyStore(db, { getActiveUuid }),
       composioMachineToken: createComposioMachineTokenRepository(secretStore),
       byokTokenUsage: createByokTokenUsageRepository(db),
+      cuberouterAccountNode: createCuberouterAccountNodeRepository(db),
       deviceIdentity: createDeviceIdentityRepository(db)
     },
     secretStore,
