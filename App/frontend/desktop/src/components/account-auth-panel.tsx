@@ -36,8 +36,45 @@ export function AccountAuthPanel() {
   const [continuing, setContinuing] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
 
+  // The line decides which deployment the account lands on, and that decision is permanent
+  // (the two hold separate accounts), so the probe only picks a default and the user can change it.
+  const [nodes, setNodes] = useState<string[]>([]);
+  const [nodeId, setNodeId] = useState<string | null>(null);
+  const [probingLine, setProbingLine] = useState(false);
+
+  useEffect(() => {
+    if (!clients?.account) {
+      return undefined;
+    }
+    let cancelled = false;
+    setProbingLine(true);
+    void (async () => {
+      try {
+        const probe = await clients.account.probeNodes();
+        if (cancelled) {
+          return;
+        }
+        setNodes(probe.nodes);
+        setNodeId(probe.defaultNodeId ?? probe.nodes[0] ?? null);
+      } catch (error) {
+        console.warn("cuberouter node probe failed", error);
+        if (!cancelled) {
+          setNodes([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setProbingLine(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clients]);
+
   // The instance decides the form's shape, so ask it instead of guessing: a mismatch here
-  // is what produced "email verification is enabled" only after a doomed submit.
+  // is what produced "email verification is enabled" only after a doomed submit. It is asked
+  // per line, because the two deployments can demand different things.
   useEffect(() => {
     if (!clients?.account) {
       return undefined;
@@ -45,7 +82,7 @@ export function AccountAuthPanel() {
     let cancelled = false;
     void (async () => {
       try {
-        const requirements = await clients.account.getRegistrationRequirements();
+        const requirements = await clients.account.getRegistrationRequirements(nodeId ?? undefined);
         if (cancelled) {
           return;
         }
@@ -65,7 +102,7 @@ export function AccountAuthPanel() {
     return () => {
       cancelled = true;
     };
-  }, [clients, t]);
+  }, [clients, nodeId, t]);
   // An authenticated result whose continuation failed; a retry must re-run only the
   // continuation, never the register/login call (re-registering would fail outright).
   const [pendingAuthResult, setPendingAuthResult] = useState<CuberouterAuthResult | null>(null);
@@ -86,7 +123,7 @@ export function AccountAuthPanel() {
   }
 
   async function submit() {
-    if (auth.pending || continuing) return;
+    if (auth.pending || continuing || probingLine) return;
     setWarning(null);
     if (pendingAuthResult) {
       await continueAfterAuth(pendingAuthResult);
@@ -103,7 +140,9 @@ export function AccountAuthPanel() {
       // every login with a demand for an address the user was never shown a field for.
       email: mode === "register" ? email : undefined,
       verificationCode: mode === "register" ? verificationCode : undefined,
-      emailVerificationRequired: mode === "register" && emailVerificationRequired
+      emailVerificationRequired: mode === "register" && emailVerificationRequired,
+      // Which deployment the account is created on; ignored when logging in.
+      nodeId: mode === "register" ? nodeId ?? undefined : undefined
     };
     const result = mode === "register"
       ? await auth.register(credentials)
@@ -225,15 +264,18 @@ export function AccountAuthPanel() {
         emailVerificationRequired={emailVerificationRequired}
         email={email}
         verificationCode={verificationCode}
+        nodes={nodes}
+        selectedNodeId={nodeId}
         sendingCode={code.sending}
         codeSecondsLeft={code.secondsLeft}
-        disabled={auth.pending || continuing}
+        disabled={auth.pending || continuing || (mode === "register" && probingLine)}
         feedback={auth.feedback ?? (warning ? { text: warning, tone: "error" } : null)}
         onUsernameChange={(next) => { clearPendingAuthResult(); setUsername(next); }}
         onPasswordChange={(next) => { clearPendingAuthResult(); setPassword(next); }}
         onConfirmPasswordChange={(next) => { clearPendingAuthResult(); setConfirmPassword(next); }}
         onEmailChange={(next) => { clearPendingAuthResult(); setEmail(next); }}
         onVerificationCodeChange={(next) => { clearPendingAuthResult(); setVerificationCode(next); }}
+        onNodeChange={(next) => { clearPendingAuthResult(); setNodeId(next); }}
         onSendCode={() => void sendVerificationCode()}
         onModeChange={(next) => { auth.clearFeedback(); clearPendingAuthResult(); setMode(next); }}
         onSubmit={() => void submit()}

@@ -335,6 +335,81 @@ describe("AccountAuthPanel auth error copy", () => {
     await vi.waitFor(() => expect(alertText()).toBe("account.warning.turnstileRequired"));
   });
 
+  it("shows the probed line as radio buttons and submits the picked one", async () => {
+    const register = vi.fn(async () => authResult({ isNewUser: true }));
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "cn" })),
+      register
+    });
+
+    await switchToRegister();
+    await vi.waitFor(() => expect(radioByLabel("account.node.cn")).not.toBeNull());
+    expect(radioByLabel("account.node.cn")!.checked).toBe(true);
+    expect(radioByLabel("account.node.hk")!.checked).toBe(false);
+
+    await act(async () => radioByLabel("account.node.hk")!.click());
+    await setInput("account.usernamePlaceholder", "alice");
+    await setInput("account.passwordPlaceholder", "Passw0rd1");
+    await setInput("account.confirmPasswordPlaceholder", "Passw0rd1");
+    await clickButton("account.register");
+
+    await vi.waitFor(() => expect(register).toHaveBeenCalledWith(
+      expect.objectContaining({ username: "alice", nodeId: "hk" })
+    ));
+  });
+
+  it("re-reads the registration requirements when the line changes", async () => {
+    const asked: Array<string | undefined> = [];
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "cn" })),
+      getRegistrationRequirements: async (nodeId?: string) => {
+        asked.push(nodeId);
+        return { emailVerificationRequired: nodeId === "hk", turnstileRequired: false };
+      }
+    });
+
+    await switchToRegister();
+    await vi.waitFor(() => expect(radioByLabel("account.node.cn")).not.toBeNull());
+    expect(inputByPlaceholder("account.emailPlaceholder")).toBeNull();
+
+    // The mainland line asks for nothing extra; switching to Hong Kong must bring the email
+    // fields in without a doomed submit.
+    await act(async () => radioByLabel("account.node.hk")!.click());
+    await vi.waitFor(() => expect(inputByPlaceholder("account.emailPlaceholder")).not.toBeNull());
+    expect(asked).toContain("hk");
+  });
+
+  it("renders the preselected line and keeps both pickable when the probe reached nothing", async () => {
+    // The backend applies the "nothing reachable → the build's default line" rule; the card
+    // only has to render what it is told and leave the other line selectable.
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "hk" }))
+    });
+
+    await switchToRegister();
+    await vi.waitFor(() => expect(radioByLabel("account.node.hk")).not.toBeNull());
+    expect(radioByLabel("account.node.hk")!.checked).toBe(true);
+    expect(radioByLabel("account.node.cn")!.disabled).toBe(false);
+  });
+
+  it("hides the picker for a single line and blocks submitting while probing", async () => {
+    let releaseProbe: (value: { nodes: string[]; defaultNodeId: string | null }) => void = () => undefined;
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
+      probeNodes: vi.fn(() => new Promise((resolve) => { releaseProbe = resolve; }))
+    });
+
+    await switchToRegister();
+    expect(buttonByLabel("account.register")!.disabled).toBe(true);
+
+    await act(async () => releaseProbe({ nodes: ["cn"], defaultNodeId: "cn" }));
+    await vi.waitFor(() => expect(buttonByLabel("account.register")!.disabled).toBe(false));
+    expect(radioByLabel("account.node.cn")).toBeNull();
+  });
+
   it("logs in without email fields even when the instance verifies email at registration", async () => {
     // The requirement describes registration only: in login mode the email inputs are not
     // on screen, so enforcing them there would reject every login with a demand for an
@@ -371,10 +446,19 @@ describe("AccountAuthPanel auth error copy", () => {
     register?: (credentials: unknown) => Promise<unknown>;
     login?: (credentials: unknown) => Promise<unknown>;
     sendEmailVerificationCode?: (payload: unknown) => Promise<unknown>;
+    probeNodes?: () => Promise<{ nodes: string[]; defaultNodeId: string | null }>;
+    getRegistrationRequirements?: (nodeId?: string) => Promise<{
+      emailVerificationRequired: boolean;
+      turnstileRequired: boolean;
+    }>;
   }) {
     mocks.clients = {
       account: {
-        getRegistrationRequirements: vi.fn(async () => {
+        probeNodes: input.probeNodes ?? vi.fn(async () => ({ nodes: [], defaultNodeId: null })),
+        getRegistrationRequirements: vi.fn(async (nodeId?: string) => {
+          if (input.getRegistrationRequirements) {
+            return await input.getRegistrationRequirements(nodeId);
+          }
           if (input.requirementsError) {
             throw input.requirementsError;
           }
@@ -413,6 +497,13 @@ describe("AccountAuthPanel auth error copy", () => {
 
   function buttonByLabel(label: string): HTMLButtonElement | null {
     return [...container.querySelectorAll("button")].find((candidate) => candidate.textContent === label) ?? null;
+  }
+
+  /** Finds the radio whose label text is the given key (the i18n mock returns raw keys). */
+  function radioByLabel(label: string): HTMLInputElement | null {
+    return [...container.querySelectorAll('input[type="radio"]')].find(
+      (candidate) => candidate.closest("label")?.textContent?.trim() === label
+    ) as HTMLInputElement | null ?? null;
   }
 
   async function submitFailingLogin(error: unknown) {

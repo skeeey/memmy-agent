@@ -19,10 +19,12 @@ export interface CredentialsInput {
   verificationCode?: string;
   /** True when the target instance demands email verification at registration. */
   emailVerificationRequired?: boolean;
+  /** Line a new account is registered on; ignored at login. */
+  nodeId?: string;
 }
 
 export type CredentialsValidationResult =
-  | { ok: true; username: string; password: string; email?: string; verificationCode?: string }
+  | { ok: true; username: string; password: string; email?: string; verificationCode?: string; nodeId?: string }
   | { ok: false; reason: "username" | "password" | "confirm" | "email" | "verificationCode" };
 
 /**
@@ -70,7 +72,10 @@ export function validateCredentials(input: CredentialsInput): CredentialsValidat
     username,
     password,
     ...(email ? { email } : {}),
-    ...(verificationCode ? { verificationCode } : {})
+    ...(verificationCode ? { verificationCode } : {}),
+    // Not validated here: the picker only ever offers lines the backend reported, and an
+    // unknown one is the backend's to reject.
+    ...(input.nodeId ? { nodeId: input.nodeId } : {})
   };
 }
 
@@ -189,7 +194,8 @@ export function useAccountAuth(): UseAccountAuthResult {
           username: validation.username,
           password: validation.password,
           ...(validation.email ? { email: validation.email } : {}),
-          ...(validation.verificationCode ? { verificationCode: validation.verificationCode } : {})
+          ...(validation.verificationCode ? { verificationCode: validation.verificationCode } : {}),
+          ...(validation.nodeId ? { nodeId: validation.nodeId } : {})
         };
         return mode === "register"
           ? await clients.account.register(credentials)

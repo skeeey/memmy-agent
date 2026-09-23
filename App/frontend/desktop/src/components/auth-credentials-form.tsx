@@ -10,6 +10,10 @@ export interface AuthCredentialsFormProps {
   confirmPassword?: string;
   /** Rendered in register mode only, and only when the instance demands email verification. */
   emailVerificationRequired?: boolean;
+  /** Lines a new account may be registered on; the picker appears only when there is a choice. */
+  nodes?: string[];
+  selectedNodeId?: string | null;
+  onNodeChange?: (nodeId: string) => void;
   email?: string;
   verificationCode?: string;
   sendingCode?: boolean;
@@ -47,6 +51,30 @@ export function AuthCredentialsForm(props: AuthCredentialsFormProps) {
 
   return (
     <div className="space-y-3.5">
+      {/*
+        Only in register mode, and only when there is a real choice: the line decides which
+        deployment the account lives on, and that is fixed the moment the account exists.
+      */}
+      {props.mode === "register" && (props.nodes?.length ?? 0) > 1 ? (
+        <fieldset className="space-y-2 text-left">
+          <legend className="text-xs text-text-ink/60">{t("account.line")}</legend>
+          <div className="flex flex-wrap gap-x-5 gap-y-2">
+            {props.nodes?.map((id) => (
+              <label key={id} className="flex items-center gap-2 text-sm text-text-ink/80">
+                <input
+                  type="radio"
+                  name="cuberouter-line"
+                  value={id}
+                  checked={props.selectedNodeId === id}
+                  disabled={props.disabled}
+                  onChange={() => props.onNodeChange?.(id)}
+                />
+                {t(`account.node.${id}` as Parameters<typeof t>[0])}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      ) : null}
       <input
         type="text"
         autoComplete="username"

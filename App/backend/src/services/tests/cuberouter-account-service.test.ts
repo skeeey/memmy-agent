@@ -395,4 +395,10 @@ describe("cuberouter account service", () => {
 
     await expect(service.getNodes()).resolves.toEqual({ nodes: ["cn", "hk"], currentNodeId: "hk" });
   });
+
+  it("preselects the build's default line when the probe reached nothing", async () => {
+    const service = createTestService({ nodes: TWO_NODES, probeDefaultNodeId: null });
+
+    await expect(service.probeNodes()).resolves.toEqual({ nodes: ["cn", "hk"], defaultNodeId: "hk" });
+  });
 });

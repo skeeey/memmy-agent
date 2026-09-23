@@ -89,18 +89,23 @@ export function createCuberouterAccountService(
     return { client: options.clientFor(url), url };
   }
 
-  /** Where a first registration should go when the caller did not pick: the probed default. */
-  async function defaultNodeId(): Promise<string> {
-    const probed = (await options.nodeRouter.probe()).defaultNodeId;
+  /**
+   * Applies the build's fallback rule to a probe result: nothing reachable means the default
+   * line, and a single-node table (pinned URL) has only itself to offer.
+   */
+  function withFallback(probed: string | null): string {
     if (options.nodeRouter.getNodeUrl(probed ?? "")) {
       return probed!;
     }
-    // Nothing to probe (both lines down) falls back to the build's default line, and a
-    // single-node table (pinned URL) has only itself to offer.
     if (options.nodeRouter.getNodeUrl(FALLBACK_NODE_ID)) {
       return FALLBACK_NODE_ID;
     }
     return options.nodeRouter.listNodes()[0]?.id ?? FALLBACK_NODE_ID;
+  }
+
+  /** Where a first registration should go when the caller did not pick: the probed default. */
+  async function defaultNodeId(): Promise<string> {
+    return withFallback((await options.nodeRouter.probe()).defaultNodeId);
   }
 
   /** The line a returning caller is already on: the stored one, else the probed default. */
@@ -244,7 +249,9 @@ export function createCuberouterAccountService(
 
     async probeNodes() {
       const nodes = options.nodeRouter.listNodes().map((node) => node.id);
-      return { nodes, defaultNodeId: (await options.nodeRouter.probe()).defaultNodeId };
+      // The UI preselects whatever this returns, so the fallback (nothing reachable → the
+      // build's default line) is applied here rather than left for the caller to guess.
+      return { nodes, defaultNodeId: withFallback((await options.nodeRouter.probe()).defaultNodeId) };
     },
 
     async login(input) {
