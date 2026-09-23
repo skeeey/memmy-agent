@@ -2,11 +2,15 @@
 import { readFileSync } from "node:fs";
 import { mutateRuntimeConfig } from "@memmy/migrations";
 import YAML from "yaml";
+// Type-only: erased at runtime, so the config module and the node table never form a real cycle.
+import type { CuberouterNode } from "../../config/cuberouter-nodes.js";
 
 export interface CuberouterSettings {
   baseUrl?: string;
   model?: string;
   timeoutMs?: number;
+  /** Replaces the build-time node table wholesale when present. */
+  nodes?: CuberouterNode[];
 }
 
 /** Reads the `cuberouter:` section; a missing section, file, or bad type yields no value. */
@@ -34,11 +38,28 @@ function toSettings(input: Record<string, unknown>): CuberouterSettings {
   const timeoutMs = typeof input.timeoutMs === "number" && Number.isFinite(input.timeoutMs)
     ? input.timeoutMs
     : undefined;
+  const nodes = toNodes(input.nodes);
   return {
     ...(baseUrl ? { baseUrl: normalizeUrl(baseUrl) } : {}),
     ...(model ? { model } : {}),
-    ...(timeoutMs ? { timeoutMs } : {})
+    ...(timeoutMs ? { timeoutMs } : {}),
+    ...(nodes.length ? { nodes } : {})
   };
+}
+
+/** Keeps only entries that could actually be dialed; a malformed row is dropped, not fatal. */
+function toNodes(value: unknown): CuberouterNode[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry) => {
+    const row = record(entry);
+    const id = optionalString(row.id);
+    const url = optionalString(row.url);
+    return id && url && /^https?:\/\//.test(url)
+      ? [{ id, url: normalizeUrl(url) }]
+      : [];
+  });
 }
 
 function normalizeUrl(value: string): string {
