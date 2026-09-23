@@ -453,6 +453,29 @@ export function SettingsPageView(props: SettingsPageViewProps) {
   const [imageGenWarningAcknowledged, setImageGenWarningAcknowledged] = useState(false);
   const [memoryModel, setMemoryModel] = useState<ModelConfig>(() => initialModelForm.memoryModel);
   const [skillModel, setSkillModel] = useState<ModelConfig>(() => initialModelForm.skillModel);
+  // Which cuberouter deployment the account lives on. Read-only on purpose: the two hold
+  // separate accounts, so changing it is not a setting — it would mean a different account.
+  const [currentNodeId, setCurrentNodeId] = useState<string | null>(null);
+  useEffect(() => {
+    const client = accountClient;
+    if (!client?.getNodes) {
+      return undefined;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const nodes = await client.getNodes();
+        if (!cancelled) {
+          setCurrentNodeId(nodes.currentNodeId);
+        }
+      } catch (error) {
+        console.warn("reading the cuberouter line failed", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountClient]);
   const accountIdentifier = resolveAccountIdentifier(state);
   const maskedAccountIdentifier = maskAccountIdentifier(accountIdentifier);
   const accountName = isByokMode
@@ -1352,6 +1375,11 @@ export function SettingsPageView(props: SettingsPageViewProps) {
                   ) : (
                     <OverflowTooltipText className="settings-account-meta-line block truncate" text={accountMeta} />
                   )}
+                  {currentNodeId ? (
+                    <div className="settings-account-line text-text-ink/45">
+                      {t("settings.account.line", { value: t(`account.node.${currentNodeId}` as MessageKey) })}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>
