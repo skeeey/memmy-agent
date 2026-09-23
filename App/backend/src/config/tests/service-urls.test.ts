@@ -65,4 +65,22 @@ describe("resolveCuberouterClientConfig", () => {
       timeoutMs: 1_500
     });
   });
+
+  it("prefers env over the config file, and the config file over the defaults", () => {
+    expect(resolveCuberouterClientConfig(
+      { MEMMY_CUBEROUTER_URL: "https://env.example" },
+      { baseUrl: "https://file.example" }
+    ).baseUrl).toBe("https://env.example");
+
+    expect(resolveCuberouterClientConfig(
+      { MEMMY_CUBEROUTER_URL: "   " },
+      { baseUrl: "https://file.example", model: "kimi-k3-a", timeoutMs: 20_000 }
+    )).toEqual({ baseUrl: "https://file.example", model: "kimi-k3-a", timeoutMs: 20_000 });
+
+    expect(resolveCuberouterClientConfig({})).toEqual({
+      baseUrl: "http://127.0.0.1:3000",
+      model: "deepseek-flash",
+      timeoutMs: 10_000
+    });
+  });
 });

@@ -21,6 +21,7 @@ import {
   createMemoryScanPreferencesStore,
   ensureMemoryScanPreferences
 } from "./infrastructure/memmy-config/agent-access.js";
+import { readCuberouterSettings } from "./infrastructure/memmy-config/cuberouter-access.js";
 import { createPermissionManager } from "./permission/index.js";
 import { createLocalApiServer } from "./adapters/inbound/local-api/server.js";
 import { createBackendServices, type BootstrapScenario } from "./services/index.js";
@@ -122,7 +123,8 @@ export async function createLocalBackend(options: CreateLocalBackendOptions): Pr
       cloudConfig,
       tryGetInstallationId(appStateStore)
     );
-    const cuberouterConfig = resolveCuberouterClientConfig(process.env);
+    const cuberouterSettings = await readCuberouterSettings(memmyConfigPath);
+    const cuberouterConfig = resolveCuberouterClientConfig(process.env, cuberouterSettings);
     const cuberouterClient = createHttpCuberouterClient({
       baseUrl: cuberouterConfig.baseUrl,
       timeoutMs: cuberouterConfig.timeoutMs
