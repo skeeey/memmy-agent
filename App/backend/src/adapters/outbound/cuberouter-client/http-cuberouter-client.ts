@@ -42,15 +42,20 @@ export function createHttpCuberouterClient(options: CreateHttpCuberouterClientOp
       });
     },
 
-    async getRegistrationRequirements() {
-      const data = await request<Record<string, unknown>>(fetchImpl, baseUrl, options.timeoutMs, "/api/status", {
-        method: "GET"
-      });
+    async getRegistrationRequirements(probeOptions) {
+      const data = await request<Record<string, unknown>>(
+        fetchImpl,
+        baseUrl,
+        probeOptions?.timeoutMs ?? options.timeoutMs,
+        "/api/status",
+        { method: "GET" }
+      );
       // Strict true, and absent means false: an instance that renames or drops these fields
       // must degrade to the plain form rather than to one that can never submit.
       return {
         emailVerificationRequired: data.email_verification === true,
-        turnstileRequired: data.turnstile_check === true
+        turnstileRequired: data.turnstile_check === true,
+        serverAddress: readString(data.server_address) ?? null
       };
     },
 

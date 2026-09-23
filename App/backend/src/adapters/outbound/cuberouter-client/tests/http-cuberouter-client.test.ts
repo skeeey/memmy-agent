@@ -226,11 +226,49 @@ describe("cuberouter client", () => {
 
     await expect(
       clientWith(fetchImpl as unknown as typeof fetch).getRegistrationRequirements()
-    ).resolves.toEqual({ emailVerificationRequired: true, turnstileRequired: true });
+    ).resolves.toEqual({ emailVerificationRequired: true, turnstileRequired: true, serverAddress: null });
 
     const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://127.0.0.1:3000/api/status");
     expect(init.method).toBe("GET");
+  });
+
+  it("reads the server address the instance names itself with", async () => {
+    // The node self-identifies here; a probe compares it against the URL it dialed, which is
+    // how a rewritten route (DNS or proxy) becomes visible instead of silently working.
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        success: true,
+        message: "",
+        data: { server_address: "https://cuberouter.com" }
+      })
+    );
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch).getRegistrationRequirements()
+    ).resolves.toEqual({
+      emailVerificationRequired: false,
+      turnstileRequired: false,
+      serverAddress: "https://cuberouter.com"
+    });
+  });
+
+  it("lets a probe cut the status call short with its own timeout", async () => {
+    // Without the override this call would wait out the client's default timeout; a probe
+    // must be able to bound itself so two slow nodes cannot stall the registration form.
+    const fetchImpl = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) =>
+        await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        })
+    );
+    const startedAt = Date.now();
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch).getRegistrationRequirements({ timeoutMs: 20 })
+    ).rejects.toThrow();
+
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
   });
 
   it("treats missing status flags as not required", async () => {
@@ -240,7 +278,7 @@ describe("cuberouter client", () => {
 
     await expect(
       clientWith(fetchImpl as unknown as typeof fetch).getRegistrationRequirements()
-    ).resolves.toEqual({ emailVerificationRequired: false, turnstileRequired: false });
+    ).resolves.toEqual({ emailVerificationRequired: false, turnstileRequired: false, serverAddress: null });
   });
 
   it("sends the email and verification code only when registering with them", async () => {

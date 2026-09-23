@@ -18,6 +18,11 @@ export interface CuberouterSession {
 export interface CuberouterRegistrationRequirements {
   emailVerificationRequired: boolean;
   turnstileRequired: boolean;
+  /**
+   * The URL the instance names itself with (`server_address`). Admin-configured, so it is only
+   * ever a soft signal: a probe compares it against the URL it dialed and logs a mismatch.
+   */
+  serverAddress: string | null;
 }
 
 export interface CuberouterTokenSummary {
@@ -42,7 +47,7 @@ export interface CuberouterClient {
   }): Promise<void>;
   login(input: { username: string; password: string }): Promise<CuberouterSession>;
   /** Reads the instance's public status so the form can match what it will accept. */
-  getRegistrationRequirements(): Promise<CuberouterRegistrationRequirements>;
+  getRegistrationRequirements(options?: { timeoutMs?: number }): Promise<CuberouterRegistrationRequirements>;
   /** Asks the instance to email a verification code. */
   sendEmailVerificationCode(email: string): Promise<void>;
   listTokens(accessToken: string): Promise<CuberouterTokenSummary[]>;
