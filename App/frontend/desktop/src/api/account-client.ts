@@ -5,6 +5,8 @@ import {
   CuberouterAuthInputSchema,
   CuberouterAuthResultSchema,
   CuberouterEmailCodeInputSchema,
+  CuberouterNodeProbeViewSchema,
+  CuberouterNodesViewSchema,
   CuberouterRegistrationRequirementsSchema,
   OkResponseSchema,
   UpdateAccountProfileInputSchema,
@@ -14,6 +16,8 @@ import {
   type CuberouterAuthInput,
   type CuberouterAuthResult,
   type CuberouterEmailCodeInput,
+  type CuberouterNodeProbeView,
+  type CuberouterNodesView,
   type CuberouterRegistrationRequirements,
   type OkResponse,
   type RuntimeConfig,
@@ -25,7 +29,11 @@ export interface AccountClient {
   register(input: CuberouterAuthInput): Promise<CuberouterAuthResult>;
   login(input: CuberouterAuthInput): Promise<CuberouterAuthResult>;
   /** Asks the instance what its registration form must collect. */
-  getRegistrationRequirements(): Promise<CuberouterRegistrationRequirements>;
+  getRegistrationRequirements(nodeId?: string): Promise<CuberouterRegistrationRequirements>;
+  /** The configured lines and the one currently in effect. */
+  getNodes(): Promise<CuberouterNodesView>;
+  /** Measures every line; slow (up to ~4s), so call it on mount only. */
+  probeNodes(): Promise<CuberouterNodeProbeView>;
   sendEmailVerificationCode(input: CuberouterEmailCodeInput): Promise<OkResponse>;
   getInvitation(): Promise<AccountInvitationView>;
   updateProfile(input: UpdateAccountProfileInput): Promise<AccountProfileView>;
@@ -54,12 +62,31 @@ export function createHttpAccountClient(config: RuntimeConfig): AccountClient {
       });
     },
 
-    async getRegistrationRequirements() {
+    async getRegistrationRequirements(nodeId) {
+      const query = nodeId ? `?${new URLSearchParams({ nodeId }).toString()}` : "";
       return requestJson({
         config,
-        path: "/api/account/registration-requirements",
+        path: `/api/account/registration-requirements${query}`,
         schema: CuberouterRegistrationRequirementsSchema,
         init: { method: "GET" }
+      });
+    },
+
+    async getNodes() {
+      return requestJson({
+        config,
+        path: "/api/account/nodes",
+        schema: CuberouterNodesViewSchema,
+        init: { method: "GET" }
+      });
+    },
+
+    async probeNodes() {
+      return requestJson({
+        config,
+        path: "/api/account/nodes/probe",
+        schema: CuberouterNodeProbeViewSchema,
+        init: { method: "POST" }
       });
     },
 

@@ -188,6 +188,52 @@ describe("account local api routes", () => {
     });
   });
 
+  it("serves the configured lines, the current line, and the probe default", async () => {
+    app = createServer({
+      cuberouterAccount: {
+        async getNodes() {
+          return { nodes: ["cn", "hk"], currentNodeId: "cn" };
+        },
+        async probeNodes() {
+          return { nodes: ["cn", "hk"], defaultNodeId: "hk" };
+        }
+      }
+    });
+
+    const nodes = await app.inject({
+      method: "GET",
+      url: "/api/account/nodes",
+      headers: { "x-memmy-local-token": "test-token" }
+    });
+    const probe = await injectJson("POST", "/api/account/nodes/probe");
+
+    expect(nodes.statusCode).toBe(200);
+    expect(nodes.json()).toEqual({ nodes: ["cn", "hk"], currentNodeId: "cn" });
+    expect(probe.statusCode).toBe(200);
+    expect(probe.json()).toEqual({ nodes: ["cn", "hk"], defaultNodeId: "hk" });
+  });
+
+  it("passes the line the caller is looking at to the requirements probe", async () => {
+    const asked: Array<string | undefined> = [];
+    app = createServer({
+      cuberouterAccount: {
+        async getRegistrationRequirements(nodeId?: string) {
+          asked.push(nodeId);
+          return { emailVerificationRequired: nodeId === "hk", turnstileRequired: false };
+        }
+      }
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/account/registration-requirements?nodeId=hk",
+      headers: { "x-memmy-local-token": "test-token" }
+    });
+
+    expect(asked).toEqual(["hk"]);
+    expect(response.json()).toMatchObject({ emailVerificationRequired: true });
+  });
+
   it("lists avatars and stores the selected avatar behind the runtime token", async () => {
     const calls: string[] = [];
     app = createServer({

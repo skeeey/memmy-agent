@@ -7,6 +7,9 @@ import {
   CuberouterAuthInputSchema,
   CuberouterAuthResultSchema,
   CuberouterEmailCodeInputSchema,
+  CuberouterNodeIdQuerySchema,
+  CuberouterNodeProbeViewSchema,
+  CuberouterNodesViewSchema,
   CuberouterRegistrationRequirementsSchema,
   OkResponseSchema,
   SetAvatarInputSchema,
@@ -51,10 +54,31 @@ export function registerAccountRoutes(app: FastifyInstance, options: RegisterAcc
   app.get(
     "/api/account/registration-requirements",
     { preHandler: options.authenticateRuntimeToken },
-    withErrorEnvelope(async (_request, reply) => {
+    withErrorEnvelope(async (request, reply) => {
+      // The line matters: the two deployments can differ in what they demand (email
+      // verification, Turnstile), so the caller says which one it is showing.
+      const { nodeId } = CuberouterNodeIdQuerySchema.parse(request.query);
       const response = CuberouterRegistrationRequirementsSchema.parse(
-        await options.cuberouterAccount.getRegistrationRequirements()
+        await options.cuberouterAccount.getRegistrationRequirements(nodeId)
       );
+      return reply.send(response);
+    })
+  );
+
+  app.get(
+    "/api/account/nodes",
+    { preHandler: options.authenticateRuntimeToken },
+    withErrorEnvelope(async (_request, reply) => {
+      const response = CuberouterNodesViewSchema.parse(await options.cuberouterAccount.getNodes());
+      return reply.send(response);
+    })
+  );
+
+  app.post(
+    "/api/account/nodes/probe",
+    { preHandler: options.authenticateRuntimeToken },
+    withErrorEnvelope(async (_request, reply) => {
+      const response = CuberouterNodeProbeViewSchema.parse(await options.cuberouterAccount.probeNodes());
       return reply.send(response);
     })
   );
