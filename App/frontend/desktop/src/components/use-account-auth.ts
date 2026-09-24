@@ -113,8 +113,12 @@ export interface UseAccountAuthResult {
   setFailure(feedback: AuthFeedback): void;
 }
 
-/** Mirrors cuberouter's own sign-up form, and its two-sends-per-30s window. */
-export const EMAIL_CODE_COOLDOWN_SECONDS = 30;
+/**
+ * How long the send button stays disabled after a successful send. Longer than the instance's
+ * own two-sends-per-30s window on purpose: mail can take a while to arrive, and the instance
+ * rate-limits per IP, so a shared connection would otherwise collect throttled sends.
+ */
+export const EMAIL_CODE_COOLDOWN_SECONDS = 60;
 
 export interface UseEmailVerificationCodeResult {
   sending: boolean;

@@ -1,9 +1,18 @@
 import { CuberouterAuthInputSchema } from "@memmy/local-api-contracts";
 import { describe, expect, it } from "vitest";
 import { ApiRequestError } from "../../api/http.js";
-import { toFeedbackText, validateCredentials } from "../use-account-auth.js";
+import { EMAIL_CODE_COOLDOWN_SECONDS, toFeedbackText, validateCredentials } from "../use-account-auth.js";
 
 const translate = (key: string) => `translated:${key}`;
+
+describe("verification code cooldown", () => {
+  it("keeps the send button disabled well past the instance's own window", () => {
+    // The instance accepts two sends per 30s per IP, so a shorter cooldown only collects
+    // throttled sends — and mail can take a while to arrive, which is the wait the user is
+    // actually sitting through before pressing the button again.
+    expect(EMAIL_CODE_COOLDOWN_SECONDS).toBeGreaterThan(30);
+  });
+});
 
 describe("validateCredentials", () => {
   it("accepts an 8-20 char password with upper, lower and digit", () => {
