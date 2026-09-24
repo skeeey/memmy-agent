@@ -151,11 +151,21 @@ export function AuthCredentialsForm(props: AuthCredentialsFormProps) {
             onKeyDown={submitOnEnter}
             className={`${inputClassName} flex-1 min-w-0`}
           />
+          {/*
+            The cooldown state is meant to be read, not just disabled: dimming it to the usual
+            disabled opacity turned "60s 后重发" into what looked like a dead button, so the
+            counting label keeps its own readable styling and only the ready state is accented.
+          */}
           <button
             type="button"
             disabled={props.disabled || codeBlocked}
             onClick={props.onSendCode}
-            className="auth-code-send shrink-0 px-3 text-xs text-action-sky border border-action-sky/40 rounded-input hover:bg-action-sky/10 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            aria-live="polite"
+            className={`auth-code-send shrink-0 px-3 text-xs rounded-input border tabular-nums transition-colors ${
+              codeBlocked
+                ? "border-border-stone/40 text-text-ink/60 cursor-not-allowed"
+                : "border-action-sky/40 text-action-sky hover:bg-action-sky/10 cursor-pointer"
+            } disabled:cursor-not-allowed`}
           >
             {props.codeSecondsLeft && props.codeSecondsLeft > 0
               ? t("account.resendCode", { seconds: props.codeSecondsLeft })
