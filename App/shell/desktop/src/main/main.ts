@@ -116,6 +116,7 @@ import {
   setWindowsLaunchAtLogin,
   type WindowsLaunchAtLoginEnvironment
 } from "./windows-launch-at-login.js";
+import { applySystemLanguageSwitch } from "./system-locale.js";
 
 let mainWindow: BrowserWindow | null = null;
 let petWindow: BrowserWindow | null = null;
@@ -4774,6 +4775,10 @@ async function sendAppExitEventBeforeQuit(): Promise<void> {
   const exitEvent = sendAppExitEvent();
   await Promise.race([exitEvent, delay(APP_QUIT_ANALYTICS_GRACE_MS)]);
 }
+
+// Before anything asks the renderer what language it is in: the switch has to be in place for
+// the first paint, and Chromium only reads it during startup.
+applySystemLanguageSwitch(app, () => app.getSystemLocale());
 
 let hasSingleInstanceLock = app.requestSingleInstanceLock();
 let lastSecondInstanceActivateAt = 0;

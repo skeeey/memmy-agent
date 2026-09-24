@@ -70,15 +70,22 @@ export function useOptionalApiClients(): ApiClientsContextValue {
 /**
  * Resolves the interface language.
  *
- * An explicit user choice wins; otherwise the packaged edition decides, so an
- * international build starts in English without the user picking a language.
+ * An explicit user choice wins. The stored default is "system", and a Chinese system has to
+ * mean Chinese: reading that setting as "the edition's language" handed a Chinese Windows an
+ * English UI because the package was built as the international edition. Every other locale
+ * keeps following the edition, which is what decides between the two languages this app ships.
  *
  * @param configuredLanguage The language stored in the app settings.
  * @returns The concrete language to render.
  */
-function resolveDisplayLanguage(configuredLanguage: string | undefined): ResolvedLanguage {
+export function resolveDisplayLanguage(configuredLanguage: string | undefined): ResolvedLanguage {
   if (configuredLanguage === "zh-CN" || configuredLanguage === "en-US") {
     return configuredLanguage;
+  }
+
+  const systemLanguage = typeof navigator === "undefined" ? "" : navigator.language?.toLowerCase() ?? "";
+  if (systemLanguage.startsWith("zh")) {
+    return "zh-CN";
   }
 
   return import.meta.env.MEMMY_APP_EDITION === "intl" ? "en-US" : "zh-CN";
