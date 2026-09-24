@@ -44,44 +44,29 @@ describe("service URL config", () => {
 });
 
 describe("resolveCuberouterClientConfig", () => {
-  it("falls back to the local cuberouter instance and deepseek-flash", () => {
+  it("falls back to the shipped model and timeout", () => {
     expect(resolveCuberouterClientConfig({})).toMatchObject({
-      baseUrl: "http://127.0.0.1:3000",
       model: "deepseek-flash",
-      timeoutMs: 10_000
+      timeoutMs: 10_000,
+      organizationId: null,
+      organizationTokenName: null
     });
   });
 
-  it("honors overrides and strips trailing slashes", () => {
+  it("honors model and timeout overrides", () => {
     expect(
       resolveCuberouterClientConfig({
-        MEMMY_CUBEROUTER_URL: "https://router.example.com/",
         MEMMY_CUBEROUTER_MODEL: "kimi-k3-a",
         MEMMY_CUBEROUTER_TIMEOUT_MS: "1500"
       })
-    ).toMatchObject({
-      baseUrl: "https://router.example.com",
-      model: "kimi-k3-a",
-      timeoutMs: 1_500
-    });
+    ).toMatchObject({ model: "kimi-k3-a", timeoutMs: 1_500 });
   });
 
-  it("prefers env over the config file, and the config file over the defaults", () => {
+  it("prefers env over the config file for the model and timeout", () => {
     expect(resolveCuberouterClientConfig(
-      { MEMMY_CUBEROUTER_URL: "https://env.example" },
-      { baseUrl: "https://file.example" }
-    ).baseUrl).toBe("https://env.example");
-
-    expect(resolveCuberouterClientConfig(
-      { MEMMY_CUBEROUTER_URL: "   " },
-      { baseUrl: "https://file.example", model: "kimi-k3-a", timeoutMs: 20_000 }
-    )).toMatchObject({ baseUrl: "https://file.example", model: "kimi-k3-a", timeoutMs: 20_000 });
-
-    expect(resolveCuberouterClientConfig({})).toMatchObject({
-      baseUrl: "http://127.0.0.1:3000",
-      model: "deepseek-flash",
-      timeoutMs: 10_000
-    });
+      { MEMMY_CUBEROUTER_MODEL: "from-env" },
+      { model: "from-file", timeoutMs: 20_000 }
+    )).toMatchObject({ model: "from-env", timeoutMs: 20_000 });
   });
 
   it("reads the organization token name the build asked for", () => {

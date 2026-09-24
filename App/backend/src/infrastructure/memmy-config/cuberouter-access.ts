@@ -9,8 +9,8 @@ export interface CuberouterSettings {
   baseUrl?: string;
   model?: string;
   timeoutMs?: number;
-  /** Replaces the build-time node table wholesale when present. */
-  nodes?: CuberouterNode[];
+  /** Replaces the build-time line table wholesale when present. */
+  urls?: CuberouterNode[];
 }
 
 /** Reads the `cuberouter:` section; a missing section, file, or bad type yields no value. */
@@ -38,12 +38,12 @@ function toSettings(input: Record<string, unknown>): CuberouterSettings {
   const timeoutMs = typeof input.timeoutMs === "number" && Number.isFinite(input.timeoutMs)
     ? input.timeoutMs
     : undefined;
-  const nodes = toNodes(input.nodes);
+  const urls = toNodes(input.urls);
   return {
     ...(baseUrl ? { baseUrl: normalizeUrl(baseUrl) } : {}),
     ...(model ? { model } : {}),
     ...(timeoutMs ? { timeoutMs } : {}),
-    ...(nodes.length ? { nodes } : {})
+    ...(urls.length ? { urls } : {})
   };
 }
 

@@ -23,32 +23,24 @@ export function parseCuberouterNodeTable(raw: string): CuberouterNode[] {
     });
 }
 
+/** The deployments a build talks to when nothing overrides them. */
+export const DEFAULT_CUBEROUTER_NODES: readonly CuberouterNode[] = Object.freeze([
+  { id: "cn", url: "https://cuberouter.cn" },
+  { id: "hk", url: "https://cuberouter.com" }
+]);
+
 /**
- * Resolves the table. An explicit `MEMMY_CUBEROUTER_URL` pins the build to that single node
- * (local development and the packaged test loop), and the config file replaces the environment
- * wholesale. Nothing configured at all falls back to the resolved default URL, so a build
- * without a table behaves exactly as every build did before the table existed.
+ * Resolves the table. The config file replaces the environment wholesale, the environment
+ * replaces the shipped table, and a build that sets nothing still knows where cuberouter is.
+ * Local development points one line at localhost: `MEMMY_CUBEROUTER_URLS=cn=http://127.0.0.1:3000`.
  */
 export function resolveCuberouterNodes(input: {
   env: NodeJS.ProcessEnv;
   settings?: CuberouterSettings;
-  /** Already-resolved default line (env > config.yaml > localhost). */
-  defaultUrl: string;
 }): CuberouterNode[] {
-  const pinned = input.env.MEMMY_CUBEROUTER_URL?.trim();
-  if (pinned) {
-    return [{ id: "default", url: normalizeUrl(pinned) }];
+  if (input.settings?.urls?.length) {
+    return input.settings.urls;
   }
-  if (input.settings?.nodes?.length) {
-    return input.settings.nodes;
-  }
-  const parsed = parseCuberouterNodeTable(input.env.MEMMY_CUBEROUTER_NODES ?? "");
-  if (parsed.length > 0) {
-    return parsed;
-  }
-  return [{ id: "default", url: normalizeUrl(input.defaultUrl) }];
-}
-
-function normalizeUrl(value: string): string {
-  return value.trim().replace(/\/+$/, "");
+  const parsed = parseCuberouterNodeTable(input.env.MEMMY_CUBEROUTER_URLS ?? "");
+  return parsed.length > 0 ? parsed : [...DEFAULT_CUBEROUTER_NODES];
 }

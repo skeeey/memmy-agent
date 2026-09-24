@@ -18,8 +18,6 @@ export function resolveCloudClientConfig(env: NodeJS.ProcessEnv): CloudClientCon
 }
 
 export interface CuberouterClientConfig {
-  /** cuberouter base URL without a trailing slash. */
-  baseUrl: string;
   /** Fixed model provisioned for desktop users. */
   model: string;
   /** Timeout ms. */
@@ -35,9 +33,7 @@ export function resolveCuberouterClientConfig(
   env: NodeJS.ProcessEnv,
   settings: CuberouterSettings = {}
 ): CuberouterClientConfig {
-  const baseUrl = env.MEMMY_CUBEROUTER_URL?.trim() || settings.baseUrl?.trim() || "http://127.0.0.1:3000";
   return {
-    baseUrl: baseUrl.replace(/\/+$/, ""),
     model: env.MEMMY_CUBEROUTER_MODEL?.trim() || settings.model?.trim() || "deepseek-flash",
     timeoutMs: Number.parseInt(env.MEMMY_CUBEROUTER_TIMEOUT_MS ?? "", 10) || settings.timeoutMs || 10_000,
     organizationId: env.MEMMY_CUBEROUTER_ORG?.trim() || null,

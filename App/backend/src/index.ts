@@ -142,13 +142,7 @@ export async function createLocalBackend(options: CreateLocalBackendOptions): Pr
       memmyConfigWriter,
       memmyConfigPath,
       scanPreferencesStore,
-      // The node table, falling back to the resolved default line so a build without one
-      // behaves exactly as it did before the table existed.
-      cuberouterNodes: resolveCuberouterNodes({
-        env: process.env,
-        settings: cuberouterSettings,
-        defaultUrl: cuberouterConfig.baseUrl
-      }),
+      cuberouterNodes: resolveCuberouterNodes({ env: process.env, settings: cuberouterSettings }),
       cuberouterConfig,
       memmyAgentAdminClient: options.memmyAgentAdminClient,
       memmyAgentAdminBootstrapSecret: await readAgentGatewayBootstrapSecret(memmyConfigPath)

@@ -66,7 +66,7 @@ cuberouter:
 
 原计划末尾记的残留项：`scripts/internal/shared/write-desktop-edition-manifest-lib.mjs` 的校验要求 HTTPS origin，会把本地默认值挡掉。F1 做完后可以用 `config.yaml` 承载默认值，这条要么改成"只注入生产 origin"，要么直接作废。
 
-**2026-09-23 更新**：多节点设计让这条有了明确形态 —— 需要注入 manifest 的是**节点表**（`MEMMY_CUBEROUTER_NODES=cn=…,hk=…`），而真实节点都是 https，manifest 的 HTTPS 校验不再挡路。等节点表正式定稿再做。
+**2026-09-23 更新**：多节点设计让这条有了明确形态 —— 需要注入 manifest 的是**线路表**（`MEMMY_CUBEROUTER_URLS=cn=…,hk=…`），而真实节点都是 https，manifest 的 HTTPS 校验不再挡路。**2026-09-24 起这条更弱了**：线路表已有内置默认（cn/hk），不注入也能用；只有要改默认表时才需要注入。
 
 ### F6 构建不该依赖 shell 里 export 过的 legal 变量
 
@@ -248,7 +248,7 @@ bash scripts/package-win-local.sh
 **cmd（注意：不是 PowerShell）**
 
 ```cmd
-set MEMMY_CUBEROUTER_URL=https://test.cuberouter.cn
+set MEMMY_CUBEROUTER_URLS=cn=https://test.cuberouter.cn
 set MEMMY_CUBEROUTER_MODEL=<该实例上真实存在的模型名>
 "C:\Users\skeee\Downloads\memmy-agent\App\shell\desktop\release\win-unpacked\Memmy.exe"
 ```
@@ -256,9 +256,9 @@ set MEMMY_CUBEROUTER_MODEL=<该实例上真实存在的模型名>
 **PowerShell（用 `$env:`，`set` 在这里是 `Set-Variable`，不会设环境变量）**
 
 ```powershell
-$env:MEMMY_CUBEROUTER_URL = "https://test.cuberouter.cn"
+$env:MEMMY_CUBEROUTER_URLS = "cn=https://test.cuberouter.cn"
 $env:MEMMY_CUBEROUTER_MODEL = "<该实例上真实存在的模型名>"
-$env:MEMMY_CUBEROUTER_URL          # 启动前确认一眼
+$env:MEMMY_CUBEROUTER_URLS          # 启动前确认一眼
 & "C:\Users\skeee\Downloads\memmy-agent\App\shell\desktop\release\win-unpacked\Memmy.exe"
 ```
 
@@ -268,7 +268,7 @@ $env:MEMMY_CUBEROUTER_URL          # 启动前确认一眼
 
 想固化成双击即用：仓库里已提交 `scripts/run-win-local.cmd` —— 就是上面 cmd 那几行的固化版，exe 路径用 `%~dp0` 相对定位，repo 克隆到哪都能跑。改变量 = 编辑这个文件里的两行 `set`。
 
-注意赋值语句本身**没有回显**，所以启动前单独敲一行 `$env:MEMMY_CUBEROUTER_URL` 确认；四行必须在同一个窗口里。路径带空格时末尾命令的 `&` 不能省。
+注意赋值语句本身**没有回显**，所以启动前单独敲一行 `$env:MEMMY_CUBEROUTER_URLS` 确认；四行必须在同一个窗口里。路径带空格时末尾命令的 `&` 不能省。
 
 日志：`%APPDATA%\Memmy\logs\main.log`；模型配置：`C:\Users\skeee\.memmy\config.yaml`。
 

@@ -44,7 +44,7 @@
 
 节点表格式：`MEMMY_CUBEROUTER_NODES=cn=https://cuberouter.cn,hk=https://cuberouter.com`，`config.yaml` 里的覆盖键为 `cuberouter.nodes`（与"当前线路" `cuberouter.baseUrl` 是两个键，不要混）。**节点显示名不进节点表**，走 i18n（`account.node.cn` / `account.node.hk`，未知 id 回落到 id 本身）—— 表里放中文，英文界面就没法用了。
 
-**优先级：`MEMMY_CUBEROUTER_URL` 显式设置时 = 钉死该地址、完全关闭探测**（本地开发与测试的现有行为不变）。节点表缺省时行为与今天一致（回落 `http://127.0.0.1:3000`）。
+**优先级（2026-09-24 修订）**：节点表默认内置 `cn=https://cuberouter.cn,hk=https://cuberouter.com`，打包版零配置即可用；`MEMMY_CUBEROUTER_URLS`（原 `_NODES`）覆盖它，`config.yaml` 的 `cuberouter.urls`（原 `cuberouter.nodes`）再覆盖环境。**单节点的 `MEMMY_CUBEROUTER_URL` 已删除** —— 它带来的优先级陷阱（设了就静默忽略节点表）不值一个变量：本地开发写 `MEMMY_CUBEROUTER_URLS=cn=http://127.0.0.1:3000` 就是单节点。"当前线路"仍由登录结果推断并写在 `cuberouter.baseUrl`。
 
 **探测与选路都在后端**（Electron 主进程，与 `config.yaml` 的读写同侧）；前端只经本地 API 读取探测结果、提交用户选择，自己不直连任何节点。
 
