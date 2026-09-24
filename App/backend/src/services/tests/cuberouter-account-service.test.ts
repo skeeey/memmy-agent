@@ -107,7 +107,7 @@ function createTestService(input: {
       getSelf: async () => ({ userId: "7", username: "alice", displayName: "Alice", quota: 0 })
     } satisfies CuberouterClient);
 
-  return createCuberouterAccountService({
+  const service = createCuberouterAccountService({
     clientFor: (url) => input.client ?? clientFor(url),
     accountSessionRepository: repository,
     accountNodes: {
@@ -135,6 +135,7 @@ function createTestService(input: {
     organizationTokenName: input.organizationTokenName === undefined ? null : input.organizationTokenName,
     log: () => undefined
   });
+  return Object.assign(service, { repository });
 }
 
 describe("cuberouter account service", () => {
@@ -441,6 +442,25 @@ describe("cuberouter account service", () => {
 
     expect(attempts).toEqual(["https://cn.example"]);
     expect(probes).toEqual([]);
+  });
+
+  it("only calls an account new the first time this machine sees the username", async () => {
+    // The account row's uuid is not a stable identity to ask: a row written under a different
+    // spelling re-appears as new, and "new" resets the guidance. The line memory is per machine
+    // and survives a logout, which is exactly the question being asked.
+    const first = createTestService({ nodes: [{ id: "default", url: "http://127.0.0.1:3000" }] });
+    await first.login({ username: "alice", password: "Passw0rd1" });
+    const firstUpsert = first.repository.upsert.mock.calls[0]![0] as { isNewUser?: boolean };
+
+    const returning = createTestService({
+      nodes: [{ id: "default", url: "http://127.0.0.1:3000" }],
+      rememberedNodeId: "default"
+    });
+    await returning.login({ username: "alice", password: "Passw0rd1" });
+    const returningUpsert = returning.repository.upsert.mock.calls[0]![0] as { isNewUser?: boolean };
+
+    expect(firstUpsert.isNewUser).toBe(true);
+    expect(returningUpsert.isNewUser).toBe(false);
   });
 
   it("looks for the token name the build configured, and for the default one otherwise", async () => {

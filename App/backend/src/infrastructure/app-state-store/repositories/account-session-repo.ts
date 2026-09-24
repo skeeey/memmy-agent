@@ -70,6 +70,18 @@ interface VerificationThrottleRow {
 const LOCAL_AUTH_CHANNEL_FIELD = "_memmyAuthChannel";
 
 /** Creates create account session repository. */
+/**
+ * Reads whether an account row belongs to a cuberouter identity. The channel is stored in the
+ * row's raw profile, so this answers "who is this account" without depending on how its uuid
+ * happens to be spelled.
+ */
+export function isCuberouterAccountRow(db: DatabaseSync, uuid: string): boolean {
+  const row = db
+    .prepare("SELECT raw_profile_json FROM cloud_accounts WHERE uuid = ?")
+    .get(uuid) as Pick<AccountSessionRow, "raw_profile_json"> | undefined;
+  return Boolean(row) && resolveAccountAuthChannel(row as AccountSessionRow) === "cuberouter";
+}
+
 export function createAccountSessionRepository(db: DatabaseSync, secretStore: SecretStore): AccountSessionRepository {
   return {
     get() {

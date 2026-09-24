@@ -184,12 +184,15 @@ export function createCuberouterAccountService(
     const { client, url } = clientForNode(nodeId);
     const session = await client.login({ username, password });
     const apiKey = await fetchOrganizationKey(client, session.accessToken);
+    // "New" is a question about this machine, and the account row is the wrong place to ask it:
+    // a row whose uuid was written under a different spelling re-appears as new, and "new"
+    // resets the guidance. The line memory is per username, survives a logout, and is written
+    // by every successful login — so it answers exactly this.
+    const seenBefore = options.accountNodes.get(username) !== null;
     const projection = options.accountSessionRepository.upsert({
       uuid: toCuberouterAccountUuid(session.userId),
       cloudUuid: session.accessToken,
-      // isNewUser is deliberately omitted: the repository decides it from whether a row
-      // for that user_id already exists, otherwise every returning user would be sent
-      // through onboarding again.
+      isNewUser: !seenBefore,
       authChannel: "cuberouter",
       profile: {
         userId: session.userId,
