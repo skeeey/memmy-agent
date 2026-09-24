@@ -477,13 +477,20 @@ export function SettingsPageView(props: SettingsPageViewProps) {
       cancelled = true;
     };
   }, [accountClient]);
+  // The account card follows the session, not the user mode. A cuberouter login persists
+  // "byok", so a mode-first question labelled a signed-in account "not signed in" (and gating
+  // the logout entry on account mode once left the only way to sign out unreachable).
+  const isSignedIn = Boolean(state.account.userId);
   const accountIdentifier = resolveAccountIdentifier(state);
   const maskedAccountIdentifier = maskAccountIdentifier(accountIdentifier);
-  const accountName = isByokMode
-    ? resolveAccountFallback(t)
-    : state.account.nickname || maskedAccountIdentifier || resolveAccountFallback(t);
+  // Signed in is a question about the session, not about the mode: a cuberouter identity runs in
+  // byok mode and still has an account, so asking the mode first labelled it "not signed in"
+  // right next to its sign-out button.
+  const accountName = isSignedIn
+    ? state.account.nickname || maskedAccountIdentifier || resolveAccountFallback(t)
+    : resolveAccountFallback(t);
   const accountMeta = isByokMode ? resolveAccountMeta(appSettings?.userMode, t) : maskedAccountIdentifier || resolveAccountMeta(appSettings?.userMode, t);
-  const accountInitial = isByokMode ? "·" : resolveAccountInitials(accountName);
+  const accountInitial = isSignedIn ? resolveAccountInitials(accountName) : "·";
   const registeredAtText = formatRegisteredAt(state.account.registeredAt, t);
   const defaultLaunchMode = appSettings?.defaultLaunchMode ?? state.navigation.preferredMode ?? "last";
   const autoUpdateEnabled = appSettings?.autoUpdateEnabled ?? true;
@@ -492,10 +499,6 @@ export function SettingsPageView(props: SettingsPageViewProps) {
   const notificationSoundEnabled = appSettings?.notificationSoundEnabled ?? true;
   const improvementPlan = privacySettings?.allowMemoryImprovementUpload ?? false;
   const hasAccountSession = Boolean(state.account.email || state.account.phoneNumber || state.account.registeredAt);
-  // The logout entry follows the session, not the user mode. A cuberouter login persists
-  // "byok", so gating it on account mode left the only way to sign out unreachable and the
-  // JWT in the encrypted store forever.
-  const isSignedIn = Boolean(state.account.userId);
   const hasByokConfig = state.modelConfig.configured === true;
   const modelMode = resolveInitialModelMode(appSettings?.userMode);
   const modelModeLabel = t(modelMode === "platform" ? "settings.model.platformMode" : "settings.model.customMode");

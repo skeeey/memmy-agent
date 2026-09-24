@@ -13,7 +13,7 @@ import { mockBootstrap } from "./fixtures/bootstrap.js";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-describe("SettingsPage registration line", () => {
+describe("SettingsPage account card", () => {
   let container: HTMLDivElement;
   let root: Root;
 
@@ -39,6 +39,16 @@ describe("SettingsPage registration line", () => {
     expect(container.textContent).toContain("大陆");
   });
 
+  it("shows the signed-in cuberouter account instead of 'not signed in'", async () => {
+    // The card used to decide the name from userMode alone: a cuberouter identity runs in byok
+    // mode, so the heading said "not signed in" right next to a sign-out button.
+    render({ getNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], currentNodeId: "cn" })) }, { signedIn: true });
+
+    await vi.waitFor(() => expect(container.textContent).toContain("当前线路"));
+    expect(container.textContent).toContain("alice");
+    expect(container.textContent).not.toContain("未登录");
+  });
+
   it("shows nothing when no line is configured", async () => {
     render({ getNodes: vi.fn(async () => ({ nodes: [], currentNodeId: null })) });
 
@@ -46,14 +56,24 @@ describe("SettingsPage registration line", () => {
     expect(container.textContent).not.toContain("当前线路");
   });
 
-  function render(accountClient: Partial<AccountClient>) {
-    const state = appReducer(
-      createInitialAppState(),
-      appActions.bootstrapLoaded(
-        { ...mockBootstrap, app: { ...mockBootstrap.app, userMode: "byok" as const, language: "zh-CN" as const } },
-        "/settings"
-      )
-    );
+  function render(accountClient: Partial<AccountClient>, options: { signedIn?: boolean } = {}) {
+    const bootstrap = {
+      ...mockBootstrap,
+      app: { ...mockBootstrap.app, userMode: "byok" as const, language: "zh-CN" as const }
+    };
+    const state = options.signedIn
+      ? appReducer(
+          appReducer(createInitialAppState(), appActions.bootstrapLoaded(bootstrap, "/settings")),
+          appActions.accountUpdated({
+            userId: "10113",
+            email: "",
+            phoneNumber: null,
+            nickname: "alice",
+            registeredAt: null,
+            identityProvider: "cuberouter" as const
+          })
+        )
+      : appReducer(createInitialAppState(), appActions.bootstrapLoaded(bootstrap, "/settings"));
     act(() => {
       root.render(
         <I18nProvider language="zh-CN">
