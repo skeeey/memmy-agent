@@ -29,6 +29,12 @@ export function initLogger(): void {
   log.transports.file.archiveLogFn = (file) => {
     rollLogFiles(file.path, MAX_LOG_FILES);
   };
+  // The backend runs in this process and logs through console. Nothing else catches that, so
+  // its output — probe results, login fallbacks, provision failures — only ever reached stdout,
+  // which a packaged app started from the shell does not have; diagnosing anything down there
+  // meant asking for the database instead. electron-log still writes to stdout as well, so
+  // `npm run dev` keeps printing to its terminal.
+  Object.assign(console, log.functions);
   applyLogLevel(getCurrentLogLevel());
 }
 
