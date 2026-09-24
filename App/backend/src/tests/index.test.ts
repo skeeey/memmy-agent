@@ -18,6 +18,7 @@ let backend: LocalBackend | undefined;
 let integrationServer: ReturnType<typeof createServer> | undefined;
 let cuberouterServer: ReturnType<typeof createServer> | undefined;
 let previousCuberouterUrl: string | undefined;
+let previousCuberouterOrg: string | undefined;
 let cuberouterUrlWasSet = false;
 
 afterEach(async () => {
@@ -29,6 +30,7 @@ afterEach(async () => {
   cuberouterServer = undefined;
   if (cuberouterUrlWasSet) {
     restoreOptionalEnv("MEMMY_CUBEROUTER_URL", previousCuberouterUrl);
+    restoreOptionalEnv("MEMMY_CUBEROUTER_ORG", previousCuberouterOrg);
     cuberouterUrlWasSet = false;
   }
 
@@ -1171,17 +1173,16 @@ async function startMockCuberouterServer(): Promise<string> {
       return;
     }
 
-    if (request.method === "GET" && request.url === "/api/token/?p=1&page_size=100") {
+    if (
+      request.method === "GET"
+      && request.url === "/api/organizations/7/tokens?keyword=memmy-desktop&status=1&page_size=100"
+    ) {
+      // Organizations hand members the full secret, which is what the desktop provisions from.
       sendJson(response, {
         success: true,
         message: "ok",
-        data: { items: [{ id: 11, name: "memmy-desktop" }] }
+        data: { items: [{ id: 11, name: "memmy-desktop", key: "sk-cuberouter" }], total: 1, page_size: 100 }
       });
-      return;
-    }
-
-    if (request.method === "POST" && request.url === "/api/token/11/key") {
-      sendJson(response, { success: true, message: "ok", data: { key: "sk-cuberouter" } });
       return;
     }
 
@@ -1196,6 +1197,8 @@ async function startMockCuberouterServer(): Promise<string> {
 
   previousCuberouterUrl = process.env.MEMMY_CUBEROUTER_URL;
   cuberouterUrlWasSet = true;
+  previousCuberouterOrg = process.env.MEMMY_CUBEROUTER_ORG;
+  process.env.MEMMY_CUBEROUTER_ORG = "7";
   const baseUrl = `http://127.0.0.1:${address.port}`;
   process.env.MEMMY_CUBEROUTER_URL = baseUrl;
   return baseUrl;

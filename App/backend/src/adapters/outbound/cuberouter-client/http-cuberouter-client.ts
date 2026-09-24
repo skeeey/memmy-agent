@@ -1,10 +1,10 @@
 /** Http cuberouter client module. */
+import { DESKTOP_TOKEN_NAME } from "./types.js";
 import type {
   CuberouterClient,
   CuberouterErrorCode,
-  CuberouterProfile,
   CuberouterSession,
-  CuberouterTokenSummary
+  CuberouterOrganizationToken
 } from "./types.js";
 
 export interface CreateHttpCuberouterClientOptions {
@@ -90,72 +90,22 @@ export function createHttpCuberouterClient(options: CreateHttpCuberouterClientOp
       };
     },
 
-    async listTokens(accessToken) {
-      const requestedPageSize = 100;
-      const tokens: CuberouterTokenSummary[] = [];
-      // Read every page, not just the first: a caller scanning for an existing token by name
-      // would otherwise miss one that sits on a later page, creating a duplicate on every
-      // login until the per-user token cap turns that into a permanent login failure.
-      for (let page = 1; ; page += 1) {
-        const response = await request<Record<string, unknown>>(
-          fetchImpl,
-          baseUrl,
-          options.timeoutMs,
-          `/api/token/?p=${page}&page_size=${requestedPageSize}`,
-          { method: "GET", accessToken }
-        );
-        const items = Array.isArray(response.items) ? response.items : [];
-        tokens.push(...toTokenSummaries(items));
-
-        const total = readCount(response.total);
-        // Trust the page size the server reports over the one requested: it may cap it.
-        const pageSize = readPositiveCount(response.page_size) ?? requestedPageSize;
-        if (items.length === 0 || total === null || page * pageSize >= total) {
-          return tokens;
-        }
-      }
-    },
-
-    async createToken(accessToken, input) {
-      await request(fetchImpl, baseUrl, options.timeoutMs, "/api/token/", {
-        method: "POST",
-        accessToken,
-        body: {
-          name: input.name,
-          expired_time: -1,
-          unlimited_quota: true,
-          remain_quota: 0,
-          model_limits_enabled: false,
-          group: ""
-        }
-      });
-    },
-
-    async getTokenKey(accessToken, tokenId) {
-      const data = await request<Record<string, unknown>>(
+    async listOrganizationTokens(accessToken, organizationId) {
+      // One page is enough: the server filters by name and status, so a name that exists returns
+      // a handful of rows. Paging would only matter for an organization with 100+ same-named keys.
+      const query = new URLSearchParams({
+        keyword: DESKTOP_TOKEN_NAME,
+        status: "1",
+        page_size: "100"
+      }).toString();
+      const response = await request<Record<string, unknown>>(
         fetchImpl,
         baseUrl,
         options.timeoutMs,
-        `/api/token/${tokenId}/key`,
-        { method: "POST", accessToken }
+        `/api/organizations/${encodeURIComponent(organizationId)}/tokens?${query}`,
+        { method: "GET", accessToken }
       );
-      const key = readString(data.key);
-      if (!key) throw cuberouterError("rejected", "cuberouter 未返回令牌明文");
-      return key;
-    },
-
-    async getSelf(accessToken) {
-      const data = await request<Record<string, unknown>>(fetchImpl, baseUrl, options.timeoutMs, "/api/user/self", {
-        method: "GET",
-        accessToken
-      });
-      const username = readString(data.username) ?? "";
-      return {
-        userId: readString(data.id) ?? "",
-        username,
-        displayName: readString(data.display_name) ?? username,
-        quota: typeof data.quota === "number" ? data.quota : 0
-      } satisfies CuberouterProfile;
+      return toOrganizationTokens(Array.isArray(response.items) ? response.items : []);
     }
   };
 }
@@ -220,13 +170,14 @@ function cuberouterError(code: CuberouterErrorCode, message: string): Error {
   return Object.assign(new Error(message), { code });
 }
 
-/** Maps one token page onto the id/name summary, dropping rows without a usable id or name. */
-function toTokenSummaries(items: unknown[]): CuberouterTokenSummary[] {
+/** Maps one organization token page onto id/name/key triples, dropping rows missing any of them. */
+function toOrganizationTokens(items: unknown[]): CuberouterOrganizationToken[] {
   return items.flatMap((item) => {
-    const record = asRecord(item);
-    const id = typeof record.id === "number" ? record.id : Number.parseInt(String(record.id ?? ""), 10);
-    const name = readString(record.name);
-    return Number.isFinite(id) && name ? [{ id, name }] : [];
+    const row = asRecord(item);
+    const id = readCount(row.id);
+    const name = readString(row.name);
+    const key = readString(row.key);
+    return id === null || !name || !key ? [] : [{ id, name, key }];
   });
 }
 
@@ -234,12 +185,6 @@ function toTokenSummaries(items: unknown[]): CuberouterTokenSummary[] {
 function readCount(value: unknown): number | null {
   const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
-}
-
-/** Reads a positive integer count (a page size); returns null so a reported 0 cannot stall paging. */
-function readPositiveCount(value: unknown): number | null {
-  const parsed = readCount(value);
-  return parsed === null || parsed < 1 ? null : parsed;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

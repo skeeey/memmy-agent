@@ -209,6 +209,25 @@ user_mode=byok, active_uuid=cuberouter:10113
 
 - 测试：后端 +1（882 文件级 881），桌面 +1（1566），双向 typecheck 干净。
 
+### F9 组织 API Key 取代桌面端自建 token
+
+**原设计的问题**：桌面端每次登录都用用户 JWT 自己建一把个人 token（`POST /api/token/`，名字 `memmy-desktop`），再读它的明文当模型 key。结果是每个用户一把 key，配额、封禁、换 key 都得逐人操作。
+
+**新做法（2026-09-24 已实现）**：构建期给 `MEMMY_CUBEROUTER_ORG`，桌面端改为用用户 JWT 调 `GET /api/organizations/<orgId>/tokens?keyword=memmy-desktop&status=1` 取**组织**里那把预置的 key：
+
+- 名字沿用 `memmy-desktop`（`DESKTOP_TOKEN_NAME`）—— 管理员在组织里建一把同名的即可，不引入新概念
+- 只要 `status=1`（启用的）：拿到被禁用的 key 只会在调用模型时炸，不如在取 key 这一步就说清楚
+- 同名多把时取最新那把（列表按 `id desc`）
+- **取不到一律同一句**：「未取到组织 API Key，请联系管理员」（新错误码 `cuberouter_key_unavailable`，HTTP 503）—— 覆盖 HTTP 失败、权限不足、组织里没这把 token 三种情况。它发生在登录/注册调用内部，前端走正常业务错误通道直接显示，不需要改 UI
+- 没配 `MEMMY_CUBEROUTER_ORG` 时错误信息点名该变量（构建配置问题，不是"联系管理员"能解决的）
+
+**从 cuberouter 源码核实的事实**：`model/token.go:16-19` 与 `service/organization_token.go:234` 明确「组织 Key 完整 secret 在列表和详情每次都返回」，因此列表项直接带 `key`；权限由 `middleware.OrganizationReadAccessAuth` 把关（普通成员只能看到自己的 + public 的）。
+
+**顺带删掉的死代码**：适配器的 `listTokens`/`createToken`/`getTokenKey`/`getSelf`（强制组织模式下没有调用方）及对应测试。
+
+**测试**：适配器 +4（请求形状、丢弃不合格行、权限拒绝的服务端消息、传输失败）、服务 +2（组织没有该 token / 没配组织变量）、配置 +1（读 `MEMMY_CUBEROUTER_ORG`）；集成测试的假 cuberouter 服务改成提供组织 token。后端 917 / 桌面 1577 全绿。
+
+
 ---
 
 ## 2. 联调记录

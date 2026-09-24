@@ -5,7 +5,9 @@ export type CuberouterErrorCode =
   | "service_unavailable"
   | "rejected"
   /** The send-code endpoint's own rate limit (two sends per IP per 30s). */
-  | "email_code_throttled";
+  | "email_code_throttled"
+  /** No provisioned organization key, or no permission to read it. */
+  | "organization_token_unavailable";
 
 export interface CuberouterSession {
   accessToken: string;
@@ -25,17 +27,15 @@ export interface CuberouterRegistrationRequirements {
   serverAddress: string | null;
 }
 
-export interface CuberouterTokenSummary {
+/** One organization token, with the plaintext key the instance returns to permitted members. */
+export interface CuberouterOrganizationToken {
   id: number;
   name: string;
+  key: string;
 }
 
-export interface CuberouterProfile {
-  userId: string;
-  username: string;
-  displayName: string;
-  quota: number;
-}
+/** The token name the desktop looks for, on the user's own tokens and inside an organization. */
+export const DESKTOP_TOKEN_NAME = "memmy-desktop";
 
 export interface CuberouterClient {
   register(input: {
@@ -50,8 +50,10 @@ export interface CuberouterClient {
   getRegistrationRequirements(options?: { timeoutMs?: number }): Promise<CuberouterRegistrationRequirements>;
   /** Asks the instance to email a verification code. */
   sendEmailVerificationCode(email: string): Promise<void>;
-  listTokens(accessToken: string): Promise<CuberouterTokenSummary[]>;
-  createToken(accessToken: string, input: { name: string }): Promise<void>;
-  getTokenKey(accessToken: string, tokenId: number): Promise<string>;
-  getSelf(accessToken: string): Promise<CuberouterProfile>;
+  /**
+   * Lists the organization's enabled tokens (name-filtered) as the signed-in member. The key is
+   * the provisioned API key: organizations hand the full secret to permitted members, which is
+   * why the desktop no longer mints a personal token of its own.
+   */
+  listOrganizationTokens(accessToken: string, organizationId: string): Promise<CuberouterOrganizationToken[]>;
 }

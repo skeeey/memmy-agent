@@ -64,141 +64,13 @@ describe("cuberouter client", () => {
     ).rejects.toMatchObject({ code: "rejected", message: "用户名已存在" });
   });
 
-  it("lists tokens with id and name", async () => {
-    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-      expect((init?.headers as Record<string, string>).authorization).toBe("Bearer jwt-1");
-      return jsonResponse({
-        success: true,
-        message: "",
-        data: { page: 1, page_size: 10, total: 2, items: [{ id: 3, name: "memmy-desktop", key: "sk-***" }, { id: 4, name: "other", key: "sk-***" }] }
-      });
-    });
-
-    await expect(
-      clientWith(fetchImpl as unknown as typeof fetch).listTokens("jwt-1")
-    ).resolves.toEqual([
-      { id: 3, name: "memmy-desktop" },
-      { id: 4, name: "other" }
-    ]);
-
-    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://127.0.0.1:3000/api/token/?p=1&page_size=100");
-    expect(init.method).toBe("GET");
-  });
-
-  it("reads every token page so a later page cannot hide an existing token", async () => {
-    // The reuse branch scans this list by name: a token that only shows up on page 2 would
-    // otherwise be invisible, and each login would create a duplicate token.
-    const firstPage = Array.from({ length: 100 }, (_, index) => ({ id: index + 1, name: `token-${index + 1}` }));
-    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
-      const page = Number(new URL(String(url)).searchParams.get("p"));
-      return jsonResponse({
-        success: true,
-        message: "",
-        data: {
-          page,
-          page_size: 100,
-          total: 101,
-          items: page === 1 ? firstPage : [{ id: 101, name: "memmy-desktop" }]
-        }
-      });
-    });
-
-    const tokens = await clientWith(fetchImpl as unknown as typeof fetch).listTokens("jwt-1");
-
-    expect(tokens).toHaveLength(101);
-    expect(tokens).toContainEqual({ id: 101, name: "memmy-desktop" });
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(String((fetchImpl.mock.calls[1] as [string])[0])).toBe("http://127.0.0.1:3000/api/token/?p=2&page_size=100");
-  });
-
-  it("honours the page size the server reports instead of the one requested", async () => {
-    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
-      const page = Number(new URL(String(url)).searchParams.get("p"));
-      return jsonResponse({
-        success: true,
-        message: "",
-        data: {
-          page,
-          page_size: 2,
-          total: 3,
-          items: page === 1
-            ? [{ id: 1, name: "one" }, { id: 2, name: "two" }]
-            : [{ id: 3, name: "memmy-desktop" }]
-        }
-      });
-    });
-
-    await expect(
-      clientWith(fetchImpl as unknown as typeof fetch).listTokens("jwt-1")
-    ).resolves.toEqual([
-      { id: 1, name: "one" },
-      { id: 2, name: "two" },
-      { id: 3, name: "memmy-desktop" }
-    ]);
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-  });
-
-  it("creates a never-expiring unlimited token", async () => {
-    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) =>
-      jsonResponse({ success: true, message: "" })
-    );
-
-    await clientWith(fetchImpl as unknown as typeof fetch).createToken("jwt-1", { name: "memmy-desktop" });
-
-    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://127.0.0.1:3000/api/token/");
-    expect(JSON.parse(String(init.body))).toEqual({
-      name: "memmy-desktop",
-      expired_time: -1,
-      unlimited_quota: true,
-      remain_quota: 0,
-      model_limits_enabled: false,
-      group: ""
-    });
-  });
-
-  it("reads the plaintext key of an existing token", async () => {
-    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) =>
-      jsonResponse({ success: true, message: "", data: { key: "sk-plain" } })
-    );
-
-    await expect(
-      clientWith(fetchImpl as unknown as typeof fetch).getTokenKey("jwt-1", 3)
-    ).resolves.toBe("sk-plain");
-
-    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://127.0.0.1:3000/api/token/3/key");
-    expect(init.method).toBe("POST");
-  });
-
-  it("reads the signed-in profile from the self endpoint", async () => {
-    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
-      expect((init?.headers as Record<string, string>).authorization).toBe("Bearer jwt-1");
-      return jsonResponse({
-        success: true,
-        message: "",
-        data: { id: 7, username: "alice", display_name: "Alice", quota: 100 }
-      });
-    });
-
-    await expect(
-      clientWith(fetchImpl as unknown as typeof fetch).getSelf("jwt-1")
-    ).resolves.toEqual({ userId: "7", username: "alice", displayName: "Alice", quota: 100 });
-
-    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://127.0.0.1:3000/api/user/self");
-    expect(init.method).toBe("GET");
-    expect((init.headers as Record<string, string>).authorization).toBe("Bearer jwt-1");
-  });
-
   it("surfaces the server message when the auth middleware rejects the request", async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse({ success: false, code: "unauthorized", message: "access token expired" }, 401)
     );
 
     await expect(
-      clientWith(fetchImpl as unknown as typeof fetch).listTokens("stale-token")
+      clientWith(fetchImpl as unknown as typeof fetch).listOrganizationTokens("stale-token", "7")
     ).rejects.toMatchObject({ code: "rejected", message: "access token expired" });
   });
 
@@ -369,7 +241,7 @@ describe("cuberouter client", () => {
     );
 
     await expect(
-      clientWith(fetchImpl as unknown as typeof fetch).getSelf("jwt-1")
+      clientWith(fetchImpl as unknown as typeof fetch).listOrganizationTokens("jwt-1", "7")
     ).rejects.toMatchObject({ code: "service_unavailable" });
   });
 });

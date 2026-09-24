@@ -3,10 +3,11 @@ import type {
   CuberouterAuthInput,
   CuberouterAuthResult
 } from "@memmy/local-api-contracts";
-import type {
-  CuberouterClient,
-  CuberouterErrorCode,
-  CuberouterRegistrationRequirements
+import {
+  DESKTOP_TOKEN_NAME,
+  type CuberouterClient,
+  type CuberouterErrorCode,
+  type CuberouterRegistrationRequirements
 } from "../adapters/outbound/cuberouter-client/index.js";
 import type { AccountSessionRepository } from "../infrastructure/app-state-store/repositories/account-session-repo.js";
 import type { CuberouterAccountNodeRepository } from "../infrastructure/app-state-store/repositories/cuberouter-account-node-repo.js";
@@ -22,7 +23,9 @@ const CUBEROUTER_ERROR_CODES: Record<CuberouterErrorCode, ApiErrorCode> = {
   service_unavailable: "cuberouter_unavailable",
   // The send-code rate limit is a 429 on the wire, so it maps onto the existing 429 code
   // and keeps cuberouter's own "wait N seconds" message.
-  email_code_throttled: "rate_limited"
+  email_code_throttled: "rate_limited",
+  // No provisioned key, or no permission to read it: the member has to ask an administrator.
+  organization_token_unavailable: "cuberouter_key_unavailable"
 };
 
 /**
@@ -38,9 +41,6 @@ function toApiError(error: unknown): Error {
     : undefined;
   return Object.assign(new Error(message), { code: code ? CUBEROUTER_ERROR_CODES[code] : "internal" });
 }
-
-/** Fixed token name used as the idempotency key for desktop provisioning. */
-export const MEMORY_DESKTOP_TOKEN_NAME = "memmy-desktop";
 
 export interface CuberouterAccountService {
   register(input: CuberouterAuthInput & { nodeId?: string }): Promise<CuberouterAuthResult>;
@@ -67,6 +67,8 @@ export interface CreateCuberouterAccountServiceOptions {
   nodeRouter: CuberouterNodeRouter;
   /** Fixed model provisioned for the desktop. */
   model: string;
+  /** Organization whose `memmy-desktop` token supplies the API key; null when unconfigured. */
+  organizationId: string | null;
   log?: (message: string) => void;
 }
 
@@ -155,7 +157,7 @@ export function createCuberouterAccountService(
   ): Promise<CuberouterAuthResult> {
     const { client, url } = clientForNode(nodeId);
     const session = await client.login({ username, password });
-    const apiKey = await ensureApiKey(client, session.accessToken);
+    const apiKey = await fetchOrganizationKey(client, session.accessToken);
     const projection = options.accountSessionRepository.upsert({
       uuid: toCuberouterAccountUuid(session.userId),
       cloudUuid: session.accessToken,
@@ -190,25 +192,29 @@ export function createCuberouterAccountService(
     };
   }
 
-  async function ensureApiKey(client: CuberouterClient, accessToken: string): Promise<string> {
-    const existing = await findToken(client, accessToken);
-    if (existing) {
-      return client.getTokenKey(accessToken, existing.id);
+  /**
+   * Reads the desktop's API key from the organization. The desktop does not mint its own token:
+   * an administrator provisions one named `memmy-desktop` inside the organization, and members
+   * are handed that secret by the instance. Anything that prevents reading it — an organization
+   * that was never configured, no such token, or no permission to see it — is the member's cue
+   * to ask an administrator, not a provisioning retry.
+   */
+  async function fetchOrganizationKey(client: CuberouterClient, accessToken: string): Promise<string> {
+    if (!options.organizationId) {
+      throw Object.assign(
+        new Error("未配置组织（MEMMY_CUBEROUTER_ORG），无法获取 API Key"),
+        { code: "organization_token_unavailable" as const }
+      );
     }
 
-    await client.createToken(accessToken, { name: MEMORY_DESKTOP_TOKEN_NAME });
-    // cuberouter does not return the id of the token it just created, so the list has
-    // to be read again to find it.
-    const created = await findToken(client, accessToken);
-    if (!created) {
-      throw Object.assign(new Error("cuberouter 未返回新建的令牌"), { code: "rejected" as const });
+    const tokens = await client.listOrganizationTokens(accessToken, options.organizationId);
+    const provisioned = tokens.find((token) => token.name === DESKTOP_TOKEN_NAME);
+    if (!provisioned) {
+      throw Object.assign(new Error("未取到组织 API Key，请联系管理员"), {
+        code: "organization_token_unavailable" as const
+      });
     }
-    return client.getTokenKey(accessToken, created.id);
-  }
-
-  async function findToken(client: CuberouterClient, accessToken: string) {
-    const tokens = await client.listTokens(accessToken);
-    return tokens.find((token) => token.name === MEMORY_DESKTOP_TOKEN_NAME) ?? null;
+    return provisioned.key;
   }
 
   return {

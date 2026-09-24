@@ -45,7 +45,7 @@ describe("service URL config", () => {
 
 describe("resolveCuberouterClientConfig", () => {
   it("falls back to the local cuberouter instance and deepseek-flash", () => {
-    expect(resolveCuberouterClientConfig({})).toEqual({
+    expect(resolveCuberouterClientConfig({})).toMatchObject({
       baseUrl: "http://127.0.0.1:3000",
       model: "deepseek-flash",
       timeoutMs: 10_000
@@ -59,7 +59,7 @@ describe("resolveCuberouterClientConfig", () => {
         MEMMY_CUBEROUTER_MODEL: "kimi-k3-a",
         MEMMY_CUBEROUTER_TIMEOUT_MS: "1500"
       })
-    ).toEqual({
+    ).toMatchObject({
       baseUrl: "https://router.example.com",
       model: "kimi-k3-a",
       timeoutMs: 1_500
@@ -75,12 +75,19 @@ describe("resolveCuberouterClientConfig", () => {
     expect(resolveCuberouterClientConfig(
       { MEMMY_CUBEROUTER_URL: "   " },
       { baseUrl: "https://file.example", model: "kimi-k3-a", timeoutMs: 20_000 }
-    )).toEqual({ baseUrl: "https://file.example", model: "kimi-k3-a", timeoutMs: 20_000 });
+    )).toMatchObject({ baseUrl: "https://file.example", model: "kimi-k3-a", timeoutMs: 20_000 });
 
-    expect(resolveCuberouterClientConfig({})).toEqual({
+    expect(resolveCuberouterClientConfig({})).toMatchObject({
       baseUrl: "http://127.0.0.1:3000",
       model: "deepseek-flash",
       timeoutMs: 10_000
     });
+  });
+
+  it("reads the organization whose token supplies the API key", () => {
+    expect(resolveCuberouterClientConfig({ MEMMY_CUBEROUTER_ORG: " 7 " }).organizationId).toBe("7");
+    // No organization means the build cannot be provisioned, and the caller has to say so.
+    expect(resolveCuberouterClientConfig({}).organizationId).toBeNull();
+    expect(resolveCuberouterClientConfig({ MEMMY_CUBEROUTER_ORG: "  " }).organizationId).toBeNull();
   });
 });

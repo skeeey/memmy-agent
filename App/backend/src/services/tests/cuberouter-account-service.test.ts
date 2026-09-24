@@ -18,9 +18,7 @@ function fakeClient(overrides: Partial<CuberouterClient> = {}): CuberouterClient
       serverAddress: "http://127.0.0.1:3000"
     })),
     sendEmailVerificationCode: vi.fn(async () => undefined),
-    listTokens: vi.fn(async () => []),
-    createToken: vi.fn(async () => undefined),
-    getTokenKey: vi.fn(async () => "sk-plain"),
+    listOrganizationTokens: vi.fn(async () => [{ id: 11, name: "memmy-desktop", key: "sk-org" }]),
     getSelf: vi.fn(async () => ({ userId: "7", username: "alice", displayName: "Alice", quota: 0 })),
     ...overrides
   };
@@ -70,6 +68,7 @@ function createTestService(input: {
   onRequirements?: (url: string) => void;
   onRemember?: (username: string, nodeId: string) => void;
   onProbe?: () => void;
+  organizationId?: string | null;
 }) {
   const remembered = new Map<string, string>();
   if (input.rememberedNodeId) remembered.set("alice", input.rememberedNodeId);
@@ -93,9 +92,7 @@ function createTestService(input: {
         return { emailVerificationRequired: false, turnstileRequired: false, serverAddress: url };
       },
       sendEmailVerificationCode: async () => undefined,
-      listTokens: async () => [{ id: 3, name: "memmy-desktop" }],
-      createToken: async () => undefined,
-      getTokenKey: async () => "sk-plain",
+      listOrganizationTokens: async () => [{ id: 11, name: "memmy-desktop", key: "sk-org" }],
       getSelf: async () => ({ userId: "7", username: "alice", displayName: "Alice", quota: 0 })
     } satisfies CuberouterClient);
 
@@ -123,27 +120,23 @@ function createTestService(input: {
       }
     },
     model: "deepseek-flash",
+    organizationId: input.organizationId === undefined ? "7" : input.organizationId,
     log: () => undefined
   });
 }
 
 describe("cuberouter account service", () => {
-  it("registers then logs in and provisions a fresh key", async () => {
-    // A fresh account lists no token, and the token created below shows up on the
-    // re-list (cuberouter does not return the id of a newly created token).
-    const client = fakeClient({
-      listTokens: vi.fn().mockResolvedValueOnce([]).mockResolvedValue([{ id: 3, name: "memmy-desktop" }])
-    });
+  it("registers then logs in and provisions the organization's key", async () => {
+    const client = fakeClient();
     const { repository, upsert } = fakeRepository();
     const service = singleNodeService(client, repository);
 
     const result = await service.register({ username: "alice", password: "Passw0rd1" });
 
     expect(client.register).toHaveBeenCalledWith({ username: "alice", password: "Passw0rd1" });
-    expect(client.createToken).toHaveBeenCalledWith("jwt-1", { name: "memmy-desktop" });
-    expect((client.listTokens as any).mock.calls.length).toBe(2);
+    expect(client.listOrganizationTokens).toHaveBeenCalledWith("jwt-1", "7");
     expect(result.provisioning).toEqual({
-      apiKey: "sk-plain",
+      apiKey: "sk-org",
       apiBase: "http://127.0.0.1:3000/v1",
       model: "deepseek-flash"
     });
@@ -158,7 +151,7 @@ describe("cuberouter account service", () => {
   });
 
   it("forwards the email verification fields the instance asked for", async () => {
-    const client = fakeClient({ listTokens: vi.fn(async () => [{ id: 3, name: "memmy-desktop" }]) });
+    const client = fakeClient();
     const { repository } = fakeRepository();
     const service = singleNodeService(client, repository);
 
@@ -225,30 +218,6 @@ describe("cuberouter account service", () => {
     await expect(service.sendEmailVerificationCode("alice@example.com")).rejects.toMatchObject({
       code: "rate_limited",
       message: "发送过于频繁，请等待 28 秒后再试"
-    });
-  });
-
-  it("reuses the existing memmy-desktop token on later logins", async () => {
-    const client = fakeClient({
-      listTokens: vi.fn(async () => [{ id: 3, name: "memmy-desktop" }])
-    });
-    const { repository } = fakeRepository();
-    const service = singleNodeService(client, repository);
-
-    const result = await service.login({ username: "alice", password: "Passw0rd1" });
-
-    expect(client.createToken).not.toHaveBeenCalled();
-    expect(client.getTokenKey).toHaveBeenCalledWith("jwt-1", 3);
-    expect(result.provisioning.apiKey).toBe("sk-plain");
-  });
-
-  it("fails when the freshly created token cannot be listed", async () => {
-    const client = fakeClient({ listTokens: vi.fn(async () => []) });
-    const { repository } = fakeRepository();
-    const service = singleNodeService(client, repository);
-
-    await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
-      code: "invalid_argument"
     });
   });
 
@@ -411,9 +380,7 @@ describe("cuberouter account service", () => {
       sendEmailVerificationCode: async () => {
         asked.push(node.url);
       },
-      listTokens: async () => [{ id: 3, name: "memmy-desktop" }],
-      createToken: async () => undefined,
-      getTokenKey: async () => "sk-plain",
+      listOrganizationTokens: async () => [{ id: 11, name: "memmy-desktop", key: "sk-org" }],
       getSelf: async () => ({ userId: "7", username: "alice", displayName: "Alice", quota: 0 })
     }])) as never;
     // The machine's current line is cn; the user picks hk for the new account.
@@ -462,6 +429,38 @@ describe("cuberouter account service", () => {
 
     expect(attempts).toEqual(["https://cn.example"]);
     expect(probes).toEqual([]);
+  });
+
+  it("asks the member to contact the administrator when the organization has no desktop token", async () => {
+    // A member with no usable key cannot be provisioned. Say who can fix it rather than
+    // reporting a provisioning failure they cannot act on.
+    const client = fakeClient({
+      listOrganizationTokens: vi.fn(async () => [{ id: 3, name: "someone-elses-key", key: "sk-other" }])
+    });
+    const { repository } = fakeRepository();
+    const service = singleNodeService(client, repository);
+
+    await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
+      code: "cuberouter_key_unavailable",
+      message: "未取到组织 API Key，请联系管理员"
+    });
+  });
+
+  it("names the missing build setting when no organization is configured", async () => {
+    const client = fakeClient();
+    const { repository } = fakeRepository();
+    const service = createTestService({
+      nodes: [{ id: "default", url: "http://127.0.0.1:3000" }],
+      client,
+      repository,
+      organizationId: null
+    });
+
+    await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
+      code: "cuberouter_key_unavailable",
+      message: expect.stringContaining("MEMMY_CUBEROUTER_ORG")
+    });
+    expect(client.listOrganizationTokens).not.toHaveBeenCalled();
   });
 
   it("still measures the lines when nothing is known about the account", async () => {

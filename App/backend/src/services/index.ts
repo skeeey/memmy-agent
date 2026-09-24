@@ -241,6 +241,7 @@ export function createBackendServices(options: CreateBackendServicesOptions): Ba
       accountNodes: options.appStateStore.repositories.cuberouterAccountNode,
       nodeRouter: cuberouterNodeRouter,
       model: options.cuberouterConfig.model,
+      organizationId: options.cuberouterConfig.organizationId,
       log: (message) => console.info(message)
     }),
     integrations: createIntegrationService({
