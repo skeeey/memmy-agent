@@ -61,9 +61,18 @@ export function AuthCredentialsForm(props: AuthCredentialsFormProps) {
       {props.mode === "register" && (props.nodes?.length ?? 0) > 1 ? (
         <fieldset className="space-y-2 text-left">
           <legend className="text-xs text-text-ink/60">{t("account.line")}</legend>
-          <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {/* Bordered options, not bare radios: two short labels sit next to each other here, and
+              without a boundary they read as one string. */}
+          <div className="flex flex-wrap gap-2.5">
             {props.nodes?.map((id) => (
-              <label key={id} className="flex items-center gap-2 text-sm text-text-ink/80">
+              <label
+                key={id}
+                className={`cuberouter-line-option flex items-center gap-2 px-3.5 py-2 text-sm rounded-input border transition-colors cursor-pointer ${
+                  props.selectedNodeId === id
+                    ? "border-action-sky text-action-sky bg-action-sky/5"
+                    : "border-border-stone/50 text-text-ink/75 hover:border-border-stone"
+                }`}
+              >
                 <input
                   type="radio"
                   name="cuberouter-line"
