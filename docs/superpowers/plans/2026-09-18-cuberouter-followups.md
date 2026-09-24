@@ -229,6 +229,30 @@ user_mode=byok, active_uuid=cuberouter:10113
 **测试**：适配器 +4（请求形状、丢弃不合格行、权限拒绝的服务端消息、传输失败）、服务 +2（组织没有该 token / 没配组织变量）、配置 +1（读 `MEMMY_CUBEROUTER_ORG`）；集成测试的假 cuberouter 服务改成提供组织 token。后端 917 / 桌面 1577 全绿。
 
 
+### F10 `MEMMY_CUBEROUTER_MODEL` 单值够不够，要不要改成数组（2026-09-24 讨论，结论：先不改）
+
+**问题**：现在只有一个模型名，而 memmy 有六个模型位。提出过的方案是改成数组，如
+`[{name: deepseek-flash}, {name: qwen-8-rerank, type: rerank}]`。
+
+**核实到的事实**（不是推测）：
+
+| 模型位 | 今天谁填 | 说明 |
+|---|---|---|
+| `agent` / `memory_summary` / `memory_evolution` | ✅ cuberouter 供给时**用同一个模型全填** | 都是文本生成，所以单值够用 |
+| `embedding` | ❌ 不填 | 默认**本地**模型（打包时下载内置那份）；mode 有 `local` / `cloud` / `custom` 三档 |
+| `asr` | ❌ 不填 | 语音输入 |
+| `image_generation` | ❌ 不填 | 图像生成 |
+
+- 能力清单在 `App/memmy-agent/src/config/schema.ts:102`（`MODEL_CAPABILITIES`），**没有 rerank**。
+- Memory 里出现的 `rerank` 是**检索管线的阶段名**（`retrieval-service.ts` 的 `rerankAt` / `tierLatencyMs.rerank`），不是模型位 —— 对召回结果做本地向量过滤排序，没有远端 rerank 模型可配。
+
+**结论：保持单值。** 今天的三个位本来就是同一个模型；array 只在"实例要供给**别的类型**"时才有意义，而那是构建期配置，等到真需要时改的成本和现在一样。
+
+**要改时的形态**（先记下，省得重想）：`type` 用上面那张能力表的词汇，**不要引入 `rerank`**（没有位可消费）；不写 `type` 默认覆盖三个文本位；每个条目 → 一个 preset + 对应分配。
+
+**触发条件**：出现"实例能提供 embedding / ASR / 图像模型，且本地那份不够用"的实际场景。
+
+
 ---
 
 ## 2. 联调记录
