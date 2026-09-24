@@ -70,7 +70,9 @@ function createTestService(input: {
   onProbe?: () => void;
   organizationId?: string | null;
   organizationTokenName?: string | null;
-  onOrganizationTokenLookup?: (tokenName: string) => void;
+  onOrganizationTokenLookup?: (tokenName: string, organizationId: string) => void;
+  organizations?: Array<{ id: string; name: string }>;
+  onOrganizationList?: () => void;
 }) {
   const remembered = new Map<string, string>();
   if (input.rememberedNodeId) remembered.set("alice", input.rememberedNodeId);
@@ -94,8 +96,12 @@ function createTestService(input: {
         return { emailVerificationRequired: false, turnstileRequired: false, serverAddress: url };
       },
       sendEmailVerificationCode: async () => undefined,
-      listOrganizationTokens: async (_token: string, _organizationId: string, tokenName: string) => {
-        input.onOrganizationTokenLookup?.(tokenName);
+      listOrganizations: async () => {
+        input.onOrganizationList?.();
+        return input.organizations ?? [];
+      },
+      listOrganizationTokens: async (_token: string, organizationId: string, tokenName: string) => {
+        input.onOrganizationTokenLookup?.(tokenName, organizationId);
         return [{ id: 11, name: tokenName, key: "sk-org" }];
       },
       getSelf: async () => ({ userId: "7", username: "alice", displayName: "Alice", quota: 0 })
@@ -453,6 +459,49 @@ describe("cuberouter account service", () => {
     await byDefault.login({ username: "alice", password: "Passw0rd1" });
 
     expect(looked).toEqual(["team-desktop", "memmy-desktop"]);
+  });
+
+  it("treats an all-digit organization setting as that instance's id", async () => {
+    const looked: string[] = [];
+    let listed = 0;
+    const service = createTestService({
+      nodes: [{ id: "default", url: "http://127.0.0.1:3000" }],
+      onOrganizationTokenLookup: (_name, organizationId) => looked.push(organizationId),
+      onOrganizationList: () => listed += 1
+    });
+
+    await service.login({ username: "alice", password: "Passw0rd1" });
+
+    expect(looked).toEqual(["7"]);
+    expect(listed).toBe(0);
+  });
+
+  it("resolves an organization name to whatever id the instance gives it", async () => {
+    // The point of naming it: the two deployments number the same organization differently.
+    const looked: string[] = [];
+    const service = createTestService({
+      nodes: [{ id: "default", url: "http://127.0.0.1:3000" }],
+      organizationId: "MemTensor",
+      organizations: [{ id: "42", name: "Other" }, { id: "9", name: "MemTensor" }],
+      onOrganizationTokenLookup: (_name, organizationId) => looked.push(organizationId)
+    });
+
+    await service.login({ username: "alice", password: "Passw0rd1" });
+
+    expect(looked).toEqual(["9"]);
+  });
+
+  it("names the organization when this line does not have it", async () => {
+    const service = createTestService({
+      nodes: [{ id: "default", url: "http://127.0.0.1:3000" }],
+      organizationId: "MemTensor",
+      organizations: [{ id: "3", name: "Other" }]
+    });
+
+    await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
+      code: "cuberouter_key_unavailable",
+      message: expect.stringContaining("MemTensor")
+    });
   });
 
   it("asks the member to contact the administrator when the organization has no desktop token", async () => {

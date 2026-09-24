@@ -216,6 +216,7 @@ user_mode=byok, active_uuid=cuberouter:10113
 **新做法（2026-09-24 已实现）**：构建期给 `MEMMY_CUBEROUTER_ORG`，桌面端改为用用户 JWT 调 `GET /api/organizations/<orgId>/tokens?keyword=memmy-desktop&status=1` 取**组织**里那把预置的 key：
 
 - 名字默认 `memmy-desktop`（`DESKTOP_TOKEN_NAME`），可用 `MEMMY_CUBEROUTER_ORG_TOKEN_NAME` 改（2026-09-24 补：组织里那把叫什么由构建决定，不必迁就 app 的约定）
+- **`MEMMY_CUBEROUTER_ORG` 可写名字**：两地部署给同一个组织分配的 id 不同，构建期写死 id 必然有一边是错的。全数字当 id 直接用；否则当**名字**，登录时用该节点的 `GET /api/organizations` 解析成本地 id（多一次请求，换掉一个必然出错的常量）
 - 只要 `status=1`（启用的）：拿到被禁用的 key 只会在调用模型时炸，不如在取 key 这一步就说清楚
 - 同名多把时取最新那把（列表按 `id desc`）
 - **取不到一律同一句**：「未取到组织 API Key，请联系管理员」（新错误码 `cuberouter_key_unavailable`，HTTP 503）—— 覆盖 HTTP 失败、权限不足、组织里没这把 token 三种情况。它发生在登录/注册调用内部，前端走正常业务错误通道直接显示，不需要改 UI

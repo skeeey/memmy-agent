@@ -151,6 +151,30 @@ export function createCuberouterAccountService(
       .slice(0, 2);
   }
 
+  /**
+   * Resolves the configured organization to the id this instance uses for it. A build names the
+   * organization because the two deployments number it independently, so the id is looked up per
+   * line; an all-digit setting is taken as the id itself (local development, single-instance setups).
+   */
+  async function resolveOrganizationId(
+    client: CuberouterClient,
+    accessToken: string,
+    configured: string
+  ): Promise<string> {
+    if (/^\d+$/.test(configured)) {
+      return configured;
+    }
+
+    const organizations = await client.listOrganizations(accessToken);
+    const match = organizations.find((organization) => organization.name === configured);
+    if (!match) {
+      throw Object.assign(new Error(`未找到组织「${configured}」，请联系管理员确认`), {
+        code: "organization_token_unavailable" as const
+      });
+    }
+    return match.id;
+  }
+
   /** Runs one login against one node and records it as the account's line. */
   async function loginOnNode(
     nodeId: string,
@@ -210,7 +234,8 @@ export function createCuberouterAccountService(
     }
 
     const tokenName = options.organizationTokenName ?? DESKTOP_TOKEN_NAME;
-    const tokens = await client.listOrganizationTokens(accessToken, options.organizationId, tokenName);
+    const organizationId = await resolveOrganizationId(client, accessToken, options.organizationId);
+    const tokens = await client.listOrganizationTokens(accessToken, organizationId, tokenName);
     // Exact match after the server's name filter: a prefix hit (a per-team key, say) is not ours.
     const provisioned = tokens.find((token) => token.name === tokenName);
     if (!provisioned) {

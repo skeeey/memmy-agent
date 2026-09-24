@@ -17,6 +17,41 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
+describe("cuberouter organizations", () => {
+  it("lists the organizations the member belongs to, with their local ids", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        success: true,
+        message: "",
+        data: [
+          { id: 7, name: "MemTensor", role: "owner" },
+          { id: 3, name: "Research", role: "member", status: 1 }
+        ]
+      })
+    );
+
+    const organizations = await clientWith(fetchImpl as unknown as typeof fetch).listOrganizations("jwt-1");
+
+    expect(organizations).toEqual([
+      { id: "7", name: "MemTensor" },
+      { id: "3", name: "Research" }
+    ]);
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:3000/api/organizations");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer jwt-1");
+  });
+
+  it("drops organization rows without a usable id or name", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ success: true, message: "", data: [{ id: 7 }, { name: "no-id" }, "nonsense"] })
+    );
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch).listOrganizations("jwt-1")
+    ).resolves.toEqual([]);
+  });
+});
+
 describe("cuberouter organization tokens", () => {
   it("lists the organization's enabled tokens with their plaintext keys", async () => {
     const fetchImpl = vi.fn(async () =>

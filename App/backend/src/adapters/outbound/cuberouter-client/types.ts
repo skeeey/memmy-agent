@@ -27,6 +27,12 @@ export interface CuberouterRegistrationRequirements {
   serverAddress: string | null;
 }
 
+/** An organization the signed-in member belongs to, as that instance numbers it. */
+export interface CuberouterOrganization {
+  id: string;
+  name: string;
+}
+
 /** One organization token, with the plaintext key the instance returns to permitted members. */
 export interface CuberouterOrganizationToken {
   id: number;
@@ -55,6 +61,11 @@ export interface CuberouterClient {
    * the provisioned API key: organizations hand the full secret to permitted members, which is
    * why the desktop no longer mints a personal token of its own.
    */
+  /**
+   * Lists the member's organizations. Ids are per instance: the same organization has a different
+   * id on each deployment, which is why a build names it and each instance resolves the id.
+   */
+  listOrganizations(accessToken: string): Promise<CuberouterOrganization[]>;
   listOrganizationTokens(
     accessToken: string,
     organizationId: string,

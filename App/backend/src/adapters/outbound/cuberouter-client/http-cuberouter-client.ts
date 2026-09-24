@@ -3,7 +3,8 @@ import type {
   CuberouterClient,
   CuberouterErrorCode,
   CuberouterSession,
-  CuberouterOrganizationToken
+  CuberouterOrganizationToken,
+  CuberouterOrganization
 } from "./types.js";
 
 export interface CreateHttpCuberouterClientOptions {
@@ -89,6 +90,15 @@ export function createHttpCuberouterClient(options: CreateHttpCuberouterClientOp
       };
     },
 
+    async listOrganizations(accessToken) {
+      const data = await request<unknown>(fetchImpl, baseUrl, options.timeoutMs, "/api/organizations", {
+        method: "GET",
+        accessToken
+      });
+      // A bare array, not a page: this endpoint answers with every organization the member is in.
+      return toOrganizations(Array.isArray(data) ? data : []);
+    },
+
     async listOrganizationTokens(accessToken, organizationId, tokenName) {
       // One page is enough: the server filters by name and status, so a name that exists returns
       // a handful of rows. Paging would only matter for an organization with 100+ same-named keys.
@@ -167,6 +177,16 @@ function parseEnvelope(text: string): CuberouterEnvelope {
 
 function cuberouterError(code: CuberouterErrorCode, message: string): Error {
   return Object.assign(new Error(message), { code });
+}
+
+/** Maps the organization list onto id/name pairs, dropping rows missing either. */
+function toOrganizations(items: unknown[]): CuberouterOrganization[] {
+  return items.flatMap((item) => {
+    const row = asRecord(item);
+    const id = readString(row.id);
+    const name = readString(row.name);
+    return id && name ? [{ id, name }] : [];
+  });
 }
 
 /** Maps one organization token page onto id/name/key triples, dropping rows missing any of them. */
