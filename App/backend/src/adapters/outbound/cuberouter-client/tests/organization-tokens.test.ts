@@ -81,6 +81,12 @@ describe("cuberouter organization tokens", () => {
     expect(url).toBe("http://127.0.0.1:3000/api/organizations/7/tokens?keyword=memmy-desktop&status=1&page_size=100");
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer jwt-1");
     expect(init.method).toBe("GET");
+    // Organization routes act *as* the organization: without these the request is taken as a
+    // personal context and the instance answers 403 "organization context mismatch".
+    expect(init.headers).toMatchObject({
+      "X-Account-Context-Type": "organization",
+      "X-Account-Context-Id": "7"
+    });
   });
 
   it("looks for the token name the caller configured", async () => {

@@ -112,7 +112,7 @@ export function createHttpCuberouterClient(options: CreateHttpCuberouterClientOp
         baseUrl,
         options.timeoutMs,
         `/api/organizations/${encodeURIComponent(organizationId)}/tokens?${query}`,
-        { method: "GET", accessToken }
+        { method: "GET", accessToken, headers: organizationContextHeaders(organizationId) }
       );
       return toOrganizationTokens(Array.isArray(response.items) ? response.items : []);
     }
@@ -128,6 +128,8 @@ async function request<T>(
     method: "GET" | "POST";
     body?: Record<string, unknown>;
     accessToken?: string;
+    /** Extra request headers (organization routes need the account-context pair). */
+    headers?: Record<string, string>;
     /** Error code to raise instead of "rejected" when this call answers 429. */
     tooManyRequestsCode?: CuberouterErrorCode;
   }
@@ -139,7 +141,8 @@ async function request<T>(
       method: input.method,
       headers: {
         ...(input.body === undefined ? {} : { "content-type": "application/json" }),
-        ...(input.accessToken ? { authorization: `Bearer ${input.accessToken}` } : {})
+        ...(input.accessToken ? { authorization: `Bearer ${input.accessToken}` } : {}),
+        ...input.headers
       },
       ...(input.body === undefined ? {} : { body: JSON.stringify(input.body) }),
       signal: AbortSignal.timeout(timeoutMs)
@@ -177,6 +180,18 @@ function parseEnvelope(text: string): CuberouterEnvelope {
 
 function cuberouterError(code: CuberouterErrorCode, message: string): Error {
   return Object.assign(new Error(message), { code });
+}
+
+/**
+ * Organization routes act as the organization, not as the person: the instance reads the account
+ * context from these two headers and rejects the request when the context is personal (its
+ * default) or names a different organization than the path.
+ */
+function organizationContextHeaders(organizationId: string): Record<string, string> {
+  return {
+    "X-Account-Context-Type": "organization",
+    "X-Account-Context-Id": organizationId
+  };
 }
 
 /** Maps the organization list onto id/name pairs, dropping rows missing either. */
