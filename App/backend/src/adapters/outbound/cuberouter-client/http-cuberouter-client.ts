@@ -1,5 +1,4 @@
 /** Http cuberouter client module. */
-import { DESKTOP_TOKEN_NAME } from "./types.js";
 import type {
   CuberouterClient,
   CuberouterErrorCode,
@@ -90,11 +89,11 @@ export function createHttpCuberouterClient(options: CreateHttpCuberouterClientOp
       };
     },
 
-    async listOrganizationTokens(accessToken, organizationId) {
+    async listOrganizationTokens(accessToken, organizationId, tokenName) {
       // One page is enough: the server filters by name and status, so a name that exists returns
       // a handful of rows. Paging would only matter for an organization with 100+ same-named keys.
       const query = new URLSearchParams({
-        keyword: DESKTOP_TOKEN_NAME,
+        keyword: tokenName,
         status: "1",
         page_size: "100"
       }).toString();

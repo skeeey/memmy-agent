@@ -34,7 +34,7 @@ export interface CuberouterOrganizationToken {
   key: string;
 }
 
-/** The token name the desktop looks for, on the user's own tokens and inside an organization. */
+/** Default name of the organization token the desktop provisions from. */
 export const DESKTOP_TOKEN_NAME = "memmy-desktop";
 
 export interface CuberouterClient {
@@ -55,5 +55,9 @@ export interface CuberouterClient {
    * the provisioned API key: organizations hand the full secret to permitted members, which is
    * why the desktop no longer mints a personal token of its own.
    */
-  listOrganizationTokens(accessToken: string, organizationId: string): Promise<CuberouterOrganizationToken[]>;
+  listOrganizationTokens(
+    accessToken: string,
+    organizationId: string,
+    tokenName: string
+  ): Promise<CuberouterOrganizationToken[]>;
 }

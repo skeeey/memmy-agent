@@ -24,8 +24,10 @@ export interface CuberouterClientConfig {
   model: string;
   /** Timeout ms. */
   timeoutMs: number;
-  /** Organization whose `memmy-desktop` token supplies the API key; null when unconfigured. */
+  /** Organization whose token supplies the API key; null when unconfigured. */
   organizationId: string | null;
+  /** Name of that token inside the organization; null means the built-in default. */
+  organizationTokenName: string | null;
 }
 
 /** Handles resolve cuberouter client config. Environment wins over the config file. */
@@ -38,6 +40,7 @@ export function resolveCuberouterClientConfig(
     baseUrl: baseUrl.replace(/\/+$/, ""),
     model: env.MEMMY_CUBEROUTER_MODEL?.trim() || settings.model?.trim() || "deepseek-flash",
     timeoutMs: Number.parseInt(env.MEMMY_CUBEROUTER_TIMEOUT_MS ?? "", 10) || settings.timeoutMs || 10_000,
-    organizationId: env.MEMMY_CUBEROUTER_ORG?.trim() || null
+    organizationId: env.MEMMY_CUBEROUTER_ORG?.trim() || null,
+    organizationTokenName: env.MEMMY_CUBEROUTER_ORG_TOKEN_NAME?.trim() || null
   };
 }

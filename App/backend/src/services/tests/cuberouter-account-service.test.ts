@@ -69,6 +69,8 @@ function createTestService(input: {
   onRemember?: (username: string, nodeId: string) => void;
   onProbe?: () => void;
   organizationId?: string | null;
+  organizationTokenName?: string | null;
+  onOrganizationTokenLookup?: (tokenName: string) => void;
 }) {
   const remembered = new Map<string, string>();
   if (input.rememberedNodeId) remembered.set("alice", input.rememberedNodeId);
@@ -92,7 +94,10 @@ function createTestService(input: {
         return { emailVerificationRequired: false, turnstileRequired: false, serverAddress: url };
       },
       sendEmailVerificationCode: async () => undefined,
-      listOrganizationTokens: async () => [{ id: 11, name: "memmy-desktop", key: "sk-org" }],
+      listOrganizationTokens: async (_token: string, _organizationId: string, tokenName: string) => {
+        input.onOrganizationTokenLookup?.(tokenName);
+        return [{ id: 11, name: tokenName, key: "sk-org" }];
+      },
       getSelf: async () => ({ userId: "7", username: "alice", displayName: "Alice", quota: 0 })
     } satisfies CuberouterClient);
 
@@ -121,6 +126,7 @@ function createTestService(input: {
     },
     model: "deepseek-flash",
     organizationId: input.organizationId === undefined ? "7" : input.organizationId,
+    organizationTokenName: input.organizationTokenName === undefined ? null : input.organizationTokenName,
     log: () => undefined
   });
 }
@@ -134,7 +140,7 @@ describe("cuberouter account service", () => {
     const result = await service.register({ username: "alice", password: "Passw0rd1" });
 
     expect(client.register).toHaveBeenCalledWith({ username: "alice", password: "Passw0rd1" });
-    expect(client.listOrganizationTokens).toHaveBeenCalledWith("jwt-1", "7");
+    expect(client.listOrganizationTokens).toHaveBeenCalledWith("jwt-1", "7", "memmy-desktop");
     expect(result.provisioning).toEqual({
       apiKey: "sk-org",
       apiBase: "http://127.0.0.1:3000/v1",
@@ -429,6 +435,24 @@ describe("cuberouter account service", () => {
 
     expect(attempts).toEqual(["https://cn.example"]);
     expect(probes).toEqual([]);
+  });
+
+  it("looks for the token name the build configured, and for the default one otherwise", async () => {
+    const looked: string[] = [];
+    const configured = createTestService({
+      nodes: [{ id: "default", url: "http://127.0.0.1:3000" }],
+      organizationTokenName: "team-desktop",
+      onOrganizationTokenLookup: (name) => looked.push(name)
+    });
+    await configured.login({ username: "alice", password: "Passw0rd1" });
+
+    const byDefault = createTestService({
+      nodes: [{ id: "default", url: "http://127.0.0.1:3000" }],
+      onOrganizationTokenLookup: (name) => looked.push(name)
+    });
+    await byDefault.login({ username: "alice", password: "Passw0rd1" });
+
+    expect(looked).toEqual(["team-desktop", "memmy-desktop"]);
   });
 
   it("asks the member to contact the administrator when the organization has no desktop token", async () => {

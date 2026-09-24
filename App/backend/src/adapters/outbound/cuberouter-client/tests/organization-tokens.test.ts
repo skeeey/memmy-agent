@@ -34,7 +34,8 @@ describe("cuberouter organization tokens", () => {
       })
     );
 
-    const tokens = await clientWith(fetchImpl as unknown as typeof fetch).listOrganizationTokens("jwt-1", "7");
+    const tokens = await clientWith(fetchImpl as unknown as typeof fetch)
+      .listOrganizationTokens("jwt-1", "7", "memmy-desktop");
 
     expect(tokens).toEqual([
       { id: 11, name: "memmy-desktop", key: "sk-org-desktop" },
@@ -47,6 +48,17 @@ describe("cuberouter organization tokens", () => {
     expect(init.method).toBe("GET");
   });
 
+  it("looks for the token name the caller configured", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ success: true, message: "", data: { items: [], total: 0 } })
+    );
+
+    await clientWith(fetchImpl as unknown as typeof fetch).listOrganizationTokens("jwt-1", "7", "team-desktop");
+
+    const [url] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("keyword=team-desktop");
+  });
+
   it("drops entries without a usable id, name or key", async () => {
     const fetchImpl = vi.fn(async () =>
       jsonResponse({
@@ -57,7 +69,7 @@ describe("cuberouter organization tokens", () => {
     );
 
     await expect(
-      clientWith(fetchImpl as unknown as typeof fetch).listOrganizationTokens("jwt-1", "7")
+      clientWith(fetchImpl as unknown as typeof fetch).listOrganizationTokens("jwt-1", "7", "memmy-desktop")
     ).resolves.toEqual([]);
   });
 
@@ -72,7 +84,7 @@ describe("cuberouter organization tokens", () => {
     );
 
     await expect(
-      clientWith(fetchImpl as unknown as typeof fetch).listOrganizationTokens("jwt-1", "7")
+      clientWith(fetchImpl as unknown as typeof fetch).listOrganizationTokens("jwt-1", "7", "memmy-desktop")
     ).rejects.toMatchObject({ code: "rejected", message: "permission denied" });
   });
 
@@ -82,7 +94,7 @@ describe("cuberouter organization tokens", () => {
     });
 
     await expect(
-      clientWith(fetchImpl as unknown as typeof fetch).listOrganizationTokens("jwt-1", "7")
+      clientWith(fetchImpl as unknown as typeof fetch).listOrganizationTokens("jwt-1", "7", "memmy-desktop")
     ).rejects.toMatchObject({ code: "service_unavailable" });
   });
 });

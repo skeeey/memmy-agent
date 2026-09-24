@@ -84,6 +84,13 @@ describe("resolveCuberouterClientConfig", () => {
     });
   });
 
+  it("reads the organization token name the build asked for", () => {
+    expect(resolveCuberouterClientConfig({ MEMMY_CUBEROUTER_ORG_TOKEN_NAME: " team-desktop " })
+      .organizationTokenName).toBe("team-desktop");
+    // Unset means the desktop keeps looking for the name it always has.
+    expect(resolveCuberouterClientConfig({}).organizationTokenName).toBeNull();
+  });
+
   it("reads the organization whose token supplies the API key", () => {
     expect(resolveCuberouterClientConfig({ MEMMY_CUBEROUTER_ORG: " 7 " }).organizationId).toBe("7");
     // No organization means the build cannot be provisioned, and the caller has to say so.

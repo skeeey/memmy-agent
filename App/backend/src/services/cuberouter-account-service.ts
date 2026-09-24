@@ -67,8 +67,10 @@ export interface CreateCuberouterAccountServiceOptions {
   nodeRouter: CuberouterNodeRouter;
   /** Fixed model provisioned for the desktop. */
   model: string;
-  /** Organization whose `memmy-desktop` token supplies the API key; null when unconfigured. */
+  /** Organization whose token supplies the API key; null when unconfigured. */
   organizationId: string | null;
+  /** Name of that token inside the organization; null means the built-in default. */
+  organizationTokenName: string | null;
   log?: (message: string) => void;
 }
 
@@ -207,8 +209,10 @@ export function createCuberouterAccountService(
       );
     }
 
-    const tokens = await client.listOrganizationTokens(accessToken, options.organizationId);
-    const provisioned = tokens.find((token) => token.name === DESKTOP_TOKEN_NAME);
+    const tokenName = options.organizationTokenName ?? DESKTOP_TOKEN_NAME;
+    const tokens = await client.listOrganizationTokens(accessToken, options.organizationId, tokenName);
+    // Exact match after the server's name filter: a prefix hit (a per-team key, say) is not ours.
+    const provisioned = tokens.find((token) => token.name === tokenName);
     if (!provisioned) {
       throw Object.assign(new Error("未取到组织 API Key，请联系管理员"), {
         code: "organization_token_unavailable" as const
