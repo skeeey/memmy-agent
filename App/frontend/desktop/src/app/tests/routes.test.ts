@@ -193,6 +193,73 @@ describe("desktop route table", () => {
     })).toBe("/main");
   });
 
+  it("keeps a guided BYOK machine out of onboarding even when its row does not say completed", () => {
+    // The machine-level marker is the one answer that cannot flap: scoping the same question to
+    // an account row let logout and re-login hand the guidance back (the row moved between
+    // scopes and identities), while "this machine has run the guidance" stays true.
+    const guidedButUnfinishedRow = {
+      ...baseBootstrap,
+      app: { ...baseBootstrap.app, userMode: "byok" as const },
+      onboarding: {
+        ...baseBootstrap.onboarding,
+        completed: false,
+        currentStep: "scan_permission_required" as const,
+        completedAt: null
+      }
+    };
+
+    expect(resolveInitialView({
+      bootstrap: guidedButUnfinishedRow,
+      preferredMode: "full",
+      guidanceCompleted: true,
+      modelConfig: {
+        catalog: {
+          modelAssignments: {
+            byok: { agent: { candidates: ["local-agent"] } }
+          }
+        }
+      }
+    })).toBe("/main");
+  });
+
+  it("still shows the guidance to a machine that has never run it", () => {
+    const unfinished = {
+      ...baseBootstrap,
+      app: { ...baseBootstrap.app, userMode: "byok" as const },
+      onboarding: {
+        ...baseBootstrap.onboarding,
+        completed: false,
+        currentStep: "scan_permission_required" as const,
+        completedAt: null
+      }
+    };
+
+    expect(resolveInitialView({
+      bootstrap: unfinished,
+      preferredMode: "full",
+      guidanceCompleted: false,
+      modelConfig: {
+        catalog: {
+          modelAssignments: {
+            byok: { agent: { candidates: ["local-agent"] } }
+          }
+        }
+      }
+    })).toBe("/onboarding");
+  });
+
+  it("does not send a guided machine back into onboarding after logging in", () => {
+    const onboarding = {
+      ...baseBootstrap.onboarding,
+      completed: false,
+      currentStep: "scan_permission_required" as const,
+      completedAt: null
+    };
+
+    expect(resolvePostLoginRoute({ onboarding, guidanceCompleted: true })).toBe("/main");
+    expect(resolvePostLoginRoute({ onboarding })).toBe("/onboarding");
+  });
+
   it("keeps a pending BYOK first report after completion carryover once a model is configured", () => {
     const carriedBootstrap = {
       ...baseBootstrap,

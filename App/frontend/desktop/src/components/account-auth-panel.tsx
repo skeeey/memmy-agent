@@ -6,7 +6,7 @@ import { useAnalytics } from "../analytics/use-analytics.js";
 import { buildInvitationSignupEvent } from "../app/invitation-analytics.js";
 import { persistLoginModeSelection } from "../app/login-mode.js";
 import { useApiClients } from "../app/providers.js";
-import { buildAccountOnboardingStartPatch, resolvePostLoginRoute } from "../app/routes.js";
+import { buildAccountOnboardingStartPatch, readGuidanceCompleted, resolvePostLoginRoute } from "../app/routes.js";
 import { useTranslation } from "../i18n/use-translation.js";
 import { getLegalLinkUrl } from "../legal/legal-links.js";
 import { appActions } from "../state/app-actions.js";
@@ -258,7 +258,12 @@ export function AccountAuthPanel() {
       dispatch(appActions.navigate(
         resolvePostLoginRoute({
           onboarding: { ...nextOnboarding, ...(persisted.onboarding ?? {}) },
-          preferredMode: state.navigation.preferredMode
+          preferredMode: state.navigation.preferredMode,
+          // This machine's own answer to "has the guidance run here", which a logout cannot
+          // move: the stored onboarding row can change scope or identity across a re-login.
+          guidanceCompleted: readGuidanceCompleted(
+            typeof window === "undefined" ? undefined : window.localStorage
+          )
         })
       ));
     } catch (error) {

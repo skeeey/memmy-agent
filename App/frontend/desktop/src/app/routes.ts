@@ -85,6 +85,8 @@ export interface PetLaunchGuardInput {
 export interface ResolvePostLoginRouteInput {
   onboarding: OnboardingStateDto;
   preferredMode: PreferredMode | null;
+  /** The machine-level "guidance already ran here" marker. */
+  guidanceCompleted?: boolean;
 }
 
 /** Contract for resolve byok model completion input. */
@@ -148,7 +150,9 @@ export function resolveInitialView(input: ResolveInitialViewInput): AppRoutePath
       return "/api-key";
     }
 
-    if (input.bootstrap.onboarding.completed) {
+    // The machine-level marker counts here as it does above: the guidance runs once per machine,
+    // and asking the account row instead let a logout and re-login hand it back.
+    if (input.bootstrap.onboarding.completed || input.guidanceCompleted) {
       return input.preferredMode === "pet" ? "/pet" : "/main";
     }
 
@@ -215,7 +219,9 @@ export function isAccountTokenQuotaExhausted(bootstrap: AppBootstrapResponse | n
 
 /** Handles resolve post login route. */
 export function resolvePostLoginRoute(input: ResolvePostLoginRouteInput): AppRoutePath {
-  if (!input.onboarding.completed) {
+  // Same rule as the startup view: a machine that has run the guidance does not run it again,
+  // whatever the stored row says after a logout moved its scope around.
+  if (!input.onboarding.completed && !input.guidanceCompleted) {
     return resolveOnboardingStep(input.onboarding.currentStep);
   }
 

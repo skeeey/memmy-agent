@@ -9,6 +9,7 @@ import type { AppClients } from "../../api/client-types.js";
 import type { ModelProviderConfig } from "../../api/config-client.js";
 import { ApiRequestError } from "../../api/http.js";
 import { mockBootstrap } from "../../pages/tests/fixtures/bootstrap.js";
+import { writeGuidanceCompleted } from "../../app/routes.js";
 import { appActions } from "../../state/app-actions.js";
 import { appReducer, createInitialAppState, type AppState } from "../../state/app-reducer.js";
 import { createModelWorkspace } from "../../state/model-workspace.js";
@@ -45,6 +46,8 @@ describe("AccountAuthPanel auth error copy", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // The guidance marker lives in localStorage; one test sets it, and it must not leak.
+    window.localStorage.clear();
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     mocks.state = createInitialAppState();
@@ -114,6 +117,39 @@ describe("AccountAuthPanel auth error copy", () => {
         testModelConfig: vi.fn(async () => ({ ok: true, message: "ok", checkedAt: "2026-09-16T00:00:00.000Z" })),
         updateSettings: vi.fn(async (settings: unknown) => settings),
         updateOnboarding
+      }
+    } as unknown as AppClients;
+
+    await act(async () => root.render(<AccountAuthPanel />));
+    await fillInput(0, "alice");
+    await fillInput(1, "Passw0rd1");
+    await clickButton("account.login");
+
+    await vi.waitFor(() => expect(mocks.dispatch).toHaveBeenCalledWith(appActions.navigate("/main")));
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(appActions.navigate("/onboarding"));
+  });
+
+  it("does not send a machine that already ran the guidance back into onboarding", async () => {
+    // The stored row can change scope or identity across a logout; the machine-level marker
+    // cannot, and the guidance is documented to run once per machine.
+    writeGuidanceCompleted(window.localStorage);
+    mocks.state = createStaleOnboardingState();
+    mocks.clients = {
+      account: {
+        getRegistrationRequirements: vi.fn(async () => ({ emailVerificationRequired: false, turnstileRequired: false })),
+        login: vi.fn(async () => authResult({ isNewUser: false }))
+      },
+      config: {
+        getModelConfig: vi.fn(async () => emptyProviderConfig()),
+        saveModelCatalog: vi.fn(async () => emptyProviderConfig()),
+        testModelConfig: vi.fn(async () => ({ ok: true, message: "ok", checkedAt: "2026-09-16T00:00:00.000Z" })),
+        updateSettings: vi.fn(async (settings: unknown) => settings),
+        // The row still reports unfinished, which is exactly the case that replayed.
+        updateOnboarding: vi.fn(async (onboarding: unknown) => ({
+          ...(onboarding as object),
+          completed: false,
+          currentStep: "scan_permission_required"
+        }))
       }
     } as unknown as AppClients;
 
