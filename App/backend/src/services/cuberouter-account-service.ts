@@ -51,8 +51,11 @@ export interface CuberouterAccountService {
   sendEmailVerificationCode(email: string, nodeId?: string): Promise<{ ok: true }>;
   /** The configured lines and the one currently in effect. */
   getNodes(): Promise<{ nodes: string[]; currentNodeId: string | null }>;
-  /** Measures every line and reports which one a first registration should use. */
-  probeNodes(): Promise<{ nodes: string[]; defaultNodeId: string | null }>;
+  /**
+   * Measures every line, reports which one a first registration should use, and whether this
+   * machine already has an account of its own.
+   */
+  probeNodes(): Promise<{ nodes: string[]; defaultNodeId: string | null; hasKnownAccount: boolean }>;
   logout(): Promise<{ ok: true }>;
 }
 
@@ -304,7 +307,13 @@ export function createCuberouterAccountService(
       const nodes = options.nodeRouter.listNodes().map((node) => node.id);
       // The UI preselects whatever this returns, so the fallback (nothing reachable → the
       // build's default line) is applied here rather than left for the caller to guess.
-      return { nodes, defaultNodeId: withFallback((await options.nodeRouter.probe()).defaultNodeId) };
+      return {
+        nodes,
+        defaultNodeId: withFallback((await options.nodeRouter.probe()).defaultNodeId),
+        // The sign-in form opens on the half a visitor needs, and this is the only honest
+        // evidence: the instance never says whether a username exists.
+        hasKnownAccount: options.accountNodes.hasAny()
+      };
     },
 
     async login(input) {

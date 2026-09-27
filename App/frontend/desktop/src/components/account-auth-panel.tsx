@@ -41,6 +41,8 @@ export function AccountAuthPanel() {
   const [nodes, setNodes] = useState<string[]>([]);
   const [nodeId, setNodeId] = useState<string | null>(null);
   const [probingLine, setProbingLine] = useState(false);
+  // The probe answers the opening mode; a visitor who switches halves has answered it better.
+  const modeChosenByUser = useRef(false);
 
   useEffect(() => {
     if (!clients?.account) {
@@ -62,6 +64,12 @@ export function AccountAuthPanel() {
             ? probe.defaultNodeId
             : probe.nodes[0] ?? null
         );
+        // A machine that has signed someone in before opens on the login half, a fresh one on
+        // registration — but only until the visitor picks a half themselves.
+        if (!modeChosenByUser.current) {
+          modeChosenByUser.current = true;
+          setMode(probe.hasKnownAccount ? "login" : "register");
+        }
       } catch (error) {
         console.warn("cuberouter node probe failed", error);
         if (!cancelled) {
@@ -299,7 +307,12 @@ export function AccountAuthPanel() {
         onVerificationCodeChange={(next) => { clearPendingAuthResult(); setVerificationCode(next); }}
         onNodeChange={(next) => { clearPendingAuthResult(); setNodeId(next); }}
         onSendCode={() => void sendVerificationCode()}
-        onModeChange={(next) => { auth.clearFeedback(); clearPendingAuthResult(); setMode(next); }}
+        onModeChange={(next) => {
+          auth.clearFeedback();
+          clearPendingAuthResult();
+          modeChosenByUser.current = true;
+          setMode(next);
+        }}
         onSubmit={() => void submit()}
         onOpenTerms={() => void openExternalUrl(getLegalLinkUrl("terms", language, state.bootstrap?.legal))}
         onOpenDataAgreement={() => void openExternalUrl(getLegalLinkUrl("data", language, state.bootstrap?.legal))}

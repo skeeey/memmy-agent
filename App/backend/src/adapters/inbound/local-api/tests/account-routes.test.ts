@@ -195,7 +195,7 @@ describe("account local api routes", () => {
           return { nodes: ["cn", "hk"], currentNodeId: "cn" };
         },
         async probeNodes() {
-          return { nodes: ["cn", "hk"], defaultNodeId: "hk" };
+          return { nodes: ["cn", "hk"], defaultNodeId: "hk", hasKnownAccount: true };
         }
       }
     });
@@ -210,7 +210,7 @@ describe("account local api routes", () => {
     expect(nodes.statusCode).toBe(200);
     expect(nodes.json()).toEqual({ nodes: ["cn", "hk"], currentNodeId: "cn" });
     expect(probe.statusCode).toBe(200);
-    expect(probe.json()).toEqual({ nodes: ["cn", "hk"], defaultNodeId: "hk" });
+    expect(probe.json()).toEqual({ nodes: ["cn", "hk"], defaultNodeId: "hk", hasKnownAccount: true });
   });
 
   it("passes the line the caller is looking at to the requirements probe", async () => {

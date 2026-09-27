@@ -257,6 +257,45 @@ describe("AccountAuthPanel auth error copy", () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(appActions.navigate("/onboarding"));
   });
 
+  it("opens a fresh machine on registration", async () => {
+    // Only the machine can answer this: the instance hides whether a username exists, so the
+    // one honest signal is whether anyone has ever signed in here.
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
+      probeNodes: vi.fn(async () => ({ nodes: ["cn"], defaultNodeId: "cn", hasKnownAccount: false }))
+    });
+
+    await vi.waitFor(() => expect(buttonByLabel("account.register")).not.toBeNull());
+    // The way across is still there.
+    expect(buttonByLabel("account.switchToLogin")).not.toBeNull();
+  });
+
+  it("opens a machine that has signed someone in on login", async () => {
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
+      probeNodes: vi.fn(async () => ({ nodes: ["cn"], defaultNodeId: "cn", hasKnownAccount: true }))
+    });
+
+    await vi.waitFor(() => expect(buttonByLabel("account.login")).not.toBeNull());
+    expect(buttonByLabel("account.switchToRegister")).not.toBeNull();
+  });
+
+  it("keeps the half the visitor picked, whatever the probe says afterwards", async () => {
+    let releaseProbe: (value: { nodes: string[]; defaultNodeId: string | null; hasKnownAccount: boolean }) => void =
+      () => undefined;
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
+      probeNodes: vi.fn(() => new Promise((resolve) => { releaseProbe = resolve; }))
+    });
+
+    // The visitor reaches registration before the probe answers.
+    await switchToRegister();
+    await act(async () => releaseProbe({ nodes: ["cn"], defaultNodeId: "cn", hasKnownAccount: true }));
+
+    expect(buttonByLabel("account.register")).not.toBeNull();
+    expect(buttonByLabel("account.login")).toBeNull();
+  });
+
   it("opens on the login form with the register link below it", async () => {
     renderPanel({ registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false } });
 
@@ -375,7 +414,7 @@ describe("AccountAuthPanel auth error copy", () => {
     const register = vi.fn(async () => authResult({ isNewUser: true }));
     renderPanel({
       registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
-      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "cn" })),
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "cn", hasKnownAccount: true })),
       register
     });
 
@@ -399,7 +438,7 @@ describe("AccountAuthPanel auth error copy", () => {
     const asked: Array<string | undefined> = [];
     renderPanel({
       registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
-      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "cn" })),
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "cn", hasKnownAccount: true })),
       getRegistrationRequirements: async (nodeId?: string) => {
         asked.push(nodeId);
         return { emailVerificationRequired: nodeId === "hk", turnstileRequired: false };
@@ -422,7 +461,7 @@ describe("AccountAuthPanel auth error copy", () => {
     // only has to render what it is told and leave the other line selectable.
     renderPanel({
       registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
-      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "hk" }))
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "hk", hasKnownAccount: true }))
     });
 
     await switchToRegister();
@@ -432,7 +471,7 @@ describe("AccountAuthPanel auth error copy", () => {
   });
 
   it("hides the picker for a single line and blocks submitting while probing", async () => {
-    let releaseProbe: (value: { nodes: string[]; defaultNodeId: string | null }) => void = () => undefined;
+    let releaseProbe: (value: { nodes: string[]; defaultNodeId: string | null; hasKnownAccount: boolean }) => void = () => undefined;
     renderPanel({
       registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
       probeNodes: vi.fn(() => new Promise((resolve) => { releaseProbe = resolve; }))
@@ -443,7 +482,7 @@ describe("AccountAuthPanel auth error copy", () => {
     expect(buttonByLabel("account.probingLine")!.disabled).toBe(true);
     expect(buttonByLabel("account.register")).toBeNull();
 
-    await act(async () => releaseProbe({ nodes: ["cn"], defaultNodeId: "cn" }));
+    await act(async () => releaseProbe({ nodes: ["cn"], defaultNodeId: "cn", hasKnownAccount: true }));
     await vi.waitFor(() => expect(buttonByLabel("account.register")!.disabled).toBe(false));
     expect(radioByLabel("account.node.cn")).toBeNull();
   });
@@ -451,7 +490,7 @@ describe("AccountAuthPanel auth error copy", () => {
   it("never preselects a line the picker does not offer", async () => {
     renderPanel({
       registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
-      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "mars" }))
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "mars", hasKnownAccount: true }))
     });
 
     await switchToRegister();
@@ -463,7 +502,7 @@ describe("AccountAuthPanel auth error copy", () => {
   it("drops a warning that belonged to the line the user just left", async () => {
     renderPanel({
       registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
-      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "hk" })),
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "hk", hasKnownAccount: true })),
       getRegistrationRequirements: async (nodeId?: string) => ({
         emailVerificationRequired: false,
         turnstileRequired: nodeId === "hk"
@@ -484,7 +523,7 @@ describe("AccountAuthPanel auth error copy", () => {
     const sendEmailVerificationCode = vi.fn(async () => ({ ok: true }));
     renderPanel({
       registrationRequirements: { emailVerificationRequired: true, turnstileRequired: false },
-      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "cn" })),
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "cn", hasKnownAccount: true })),
       sendEmailVerificationCode
     });
 
@@ -535,7 +574,7 @@ describe("AccountAuthPanel auth error copy", () => {
     register?: (credentials: unknown) => Promise<unknown>;
     login?: (credentials: unknown) => Promise<unknown>;
     sendEmailVerificationCode?: (payload: unknown) => Promise<unknown>;
-    probeNodes?: () => Promise<{ nodes: string[]; defaultNodeId: string | null }>;
+    probeNodes?: () => Promise<{ nodes: string[]; defaultNodeId: string | null; hasKnownAccount: boolean }>;
     getRegistrationRequirements?: (nodeId?: string) => Promise<{
       emailVerificationRequired: boolean;
       turnstileRequired: boolean;
@@ -543,7 +582,7 @@ describe("AccountAuthPanel auth error copy", () => {
   }) {
     mocks.clients = {
       account: {
-        probeNodes: input.probeNodes ?? vi.fn(async () => ({ nodes: [], defaultNodeId: null })),
+        probeNodes: input.probeNodes ?? vi.fn(async () => ({ nodes: [], defaultNodeId: null, hasKnownAccount: true })),
         getRegistrationRequirements: vi.fn(async (nodeId?: string) => {
           if (input.getRegistrationRequirements) {
             return await input.getRegistrationRequirements(nodeId);

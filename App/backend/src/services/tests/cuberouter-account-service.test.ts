@@ -70,6 +70,7 @@ function createTestService(input: {
   onProbe?: () => void;
   organizationId?: string | null;
   organizationTokenName?: string | null;
+  knownAccount?: boolean;
   onOrganizationTokenLookup?: (tokenName: string, organizationId: string) => void;
   organizations?: Array<{ id: string; name: string }>;
   onOrganizationList?: () => void;
@@ -111,6 +112,7 @@ function createTestService(input: {
     clientFor: (url) => input.client ?? clientFor(url),
     accountSessionRepository: repository,
     accountNodes: {
+      hasAny: () => input.knownAccount ?? remembered.size > 0,
       get: (username: string) => remembered.get(username.trim()) ?? null,
       set: (username: string, nodeId: string) => {
         remembered.set(username.trim(), nodeId);
@@ -413,7 +415,18 @@ describe("cuberouter account service", () => {
   it("preselects the build's default line when the probe reached nothing", async () => {
     const service = createTestService({ nodes: TWO_NODES, probeDefaultNodeId: null });
 
-    await expect(service.probeNodes()).resolves.toEqual({ nodes: ["cn", "hk"], defaultNodeId: "hk" });
+    await expect(service.probeNodes()).resolves.toMatchObject({ nodes: ["cn", "hk"], defaultNodeId: "hk" });
+  });
+
+  it("tells the sign-in form whether this machine has an account of its own", async () => {
+    // The form opens on whichever half a visitor needs, and a machine that has signed someone
+    // in before is the only evidence available: the instance never says whether a username
+    // exists.
+    const known = createTestService({ nodes: TWO_NODES, knownAccount: true });
+    const fresh = createTestService({ nodes: TWO_NODES, knownAccount: false });
+
+    await expect(known.probeNodes()).resolves.toMatchObject({ hasKnownAccount: true });
+    await expect(fresh.probeNodes()).resolves.toMatchObject({ hasKnownAccount: false });
   });
 
   it("never names a line the table does not have, and says so plainly when there is none", async () => {
@@ -421,7 +434,7 @@ describe("cuberouter account service", () => {
     // table means a caller passed one. Report it as "no line", never as a phantom id.
     const service = createTestService({ nodes: [] });
 
-    await expect(service.probeNodes()).resolves.toEqual({ nodes: [], defaultNodeId: null });
+    await expect(service.probeNodes()).resolves.toMatchObject({ nodes: [], defaultNodeId: null });
     await expect(service.register({ username: "alice", password: "Passw0rd1" }))
       .rejects.toMatchObject({ code: "invalid_argument", message: "没有可用的 cuberouter 线路" });
   });
