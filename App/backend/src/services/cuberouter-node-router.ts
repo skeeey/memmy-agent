@@ -19,9 +19,6 @@ export interface NodeProbeResult {
   defaultNodeId: string | null;
 }
 
-/** Two nearby latencies are noise, so the language prior only applies inside this factor. */
-const LATENCY_DECISIVE_FACTOR = 2;
-
 /** For this build's node ids: a Chinese UI leans mainland, anything else leans Hong Kong. */
 function languagePreferredNodeId(language: string): string {
   return language.toLowerCase().startsWith("zh") ? "cn" : FALLBACK_NODE_ID;
@@ -46,10 +43,13 @@ export function chooseDefaultNode(entries: readonly NodeProbeEntry[], language: 
     return reachable[0]!.nodeId;
   }
 
+  // The faster line wins outright: what it saves is what every request pays, and a "small
+  // ratio" is not a reason to hand the user the slower one. The language prior only breaks an
+  // exact tie, where either choice is as good as the other.
   const sorted = [...reachable].sort((left, right) => left.latencyMs! - right.latencyMs!);
   const fastest = sorted[0]!;
   const slowest = sorted[sorted.length - 1]!;
-  if (fastest.latencyMs! * LATENCY_DECISIVE_FACTOR <= slowest.latencyMs!) {
+  if (fastest.latencyMs! < slowest.latencyMs!) {
     return fastest.nodeId;
   }
 

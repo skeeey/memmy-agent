@@ -62,14 +62,18 @@ describe("chooseDefaultNode", () => {
     expect(chooseDefaultNode([entry("cn", 120), entry("hk", null)], "en-US")).toBe("cn");
   });
 
-  it("takes the clearly faster node when the gap is at least 2x", () => {
-    expect(chooseDefaultNode([entry("cn", 120), entry("hk", 480)], "en-US")).toBe("cn");
+  it("takes the faster node, whatever the gap", () => {
+    // The measured difference is what every request pays, so a small ratio is not a reason to
+    // hand the user the slower node. The pair below (234 vs 335, English UI) picked Hong Kong
+    // until the ratio rule was removed.
+    expect(chooseDefaultNode([entry("cn", 234), entry("hk", 335)], "en-US")).toBe("cn");
+    expect(chooseDefaultNode([entry("cn", 200), entry("hk", 300)], "en-US")).toBe("cn");
     expect(chooseDefaultNode([entry("cn", 500), entry("hk", 130)], "zh-CN")).toBe("hk");
   });
 
-  it("falls back to the language when the gap is under 2x", () => {
-    expect(chooseDefaultNode([entry("cn", 200), entry("hk", 300)], "zh-CN")).toBe("cn");
-    expect(chooseDefaultNode([entry("cn", 200), entry("hk", 300)], "en-US")).toBe("hk");
+  it("falls back to the language only when the two are equally fast", () => {
+    expect(chooseDefaultNode([entry("cn", 200), entry("hk", 200)], "zh-CN")).toBe("cn");
+    expect(chooseDefaultNode([entry("cn", 200), entry("hk", 200)], "en-US")).toBe("hk");
   });
 
   it("returns null when nothing is reachable", () => {
