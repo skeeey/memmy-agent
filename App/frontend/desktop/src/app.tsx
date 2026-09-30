@@ -10,6 +10,7 @@ import { trackCloudAnalyticsEvent } from "./analytics/cloud-analytics.js";
 import { trackAgentSourceScanOutcome } from "./analytics/memory-ui-analytics.js";
 import { useAnalytics } from "./analytics/use-analytics.js";
 import { buildInvitationToastEvent } from "./app/invitation-analytics.js";
+import { isCuberouterAccountBackend } from "./app/account-backend.js";
 import {
   AgentRuntimeBridge,
   createAgentTaskStateCoordinator,
@@ -228,7 +229,8 @@ function RuntimeApp() {
           preferredMode: launchModeOverride ?? persistedPreferredMode,
           accountSession,
           guidanceCompleted,
-          modelConfig
+          modelConfig,
+          cuberouterAccountBackend: isCuberouterAccountBackend()
         });
         const initialPath = resolveLaunchInitialView({
           defaultPath: defaultInitialPath,

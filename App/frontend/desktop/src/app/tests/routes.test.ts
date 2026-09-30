@@ -442,6 +442,101 @@ describe("desktop route table", () => {
     ).toBe("/pet");
   });
 
+  it("opens a cuberouter build on the login form whenever nobody is signed in", () => {
+    // The welcome page of such a build carries no sign-up gift and no "use your own API key"
+    // bypass, so signing in is its one way forward. A model config left behind by an earlier run
+    // is enough to empty the catalog, and reading that first would park a visitor on the API-key
+    // page with no route to the login form — permanently, since nothing rewrites the stored mode.
+    const byok = {
+      ...baseBootstrap,
+      app: { ...baseBootstrap.app, userMode: "byok" as const },
+      onboarding: {
+        ...baseBootstrap.onboarding,
+        completed: true,
+        currentStep: "completed" as const,
+        completedAt: "2026-06-01T00:00:00.000Z"
+      }
+    };
+
+    expect(
+      resolveInitialView({
+        bootstrap: byok,
+        preferredMode: "full",
+        accountSession: { authenticated: false },
+        cuberouterAccountBackend: true,
+        modelConfig: { catalog: { modelAssignments: { byok: { agent: { candidates: [] } } } } }
+      })
+    ).toBe("/welcome");
+
+    // Same machine after onboarding, signed out, with a model that still works.
+    expect(
+      resolveInitialView({
+        bootstrap: byok,
+        preferredMode: "full",
+        accountSession: { authenticated: false },
+        cuberouterAccountBackend: true,
+        modelConfig: { catalog: { modelAssignments: { byok: { agent: { candidates: ["local-agent"] } } } } }
+      })
+    ).toBe("/welcome");
+  });
+
+  it("keeps a signed-in cuberouter machine on its model setup", () => {
+    // Switching to a custom key is a registered user's choice, so an authenticated session must
+    // not be sent back to the login form merely because the build is a cuberouter one.
+    expect(
+      resolveInitialView({
+        bootstrap: {
+          ...baseBootstrap,
+          app: { ...baseBootstrap.app, userMode: "byok" as const }
+        },
+        preferredMode: "full",
+        accountSession: { authenticated: true },
+        cuberouterAccountBackend: true,
+        modelConfig: { catalog: { modelAssignments: { byok: { agent: { candidates: [] } } } } }
+      })
+    ).toBe("/api-key");
+  });
+
+  it("leaves a build that offers its own BYOK entry on the existing rules", () => {
+    // Such a welcome page offers "use your own API key", so an account-less machine there is a
+    // visitor who chose that path rather than someone who has to sign in.
+    expect(
+      resolveInitialView({
+        bootstrap: {
+          ...baseBootstrap,
+          app: { ...baseBootstrap.app, userMode: "byok" as const }
+        },
+        preferredMode: "full",
+        accountSession: { authenticated: false },
+        cuberouterAccountBackend: false,
+        modelConfig: { catalog: { modelAssignments: { byok: { agent: { candidates: [] } } } } }
+      })
+    ).toBe("/api-key");
+  });
+
+  it("keeps the existing rules for a cuberouter caller that passes no session", () => {
+    // The pet window rebuilds a session from a lossy summary and hands none over in byok mode,
+    // which is every cuberouter identity. Reading that absence as "signed out" would send the
+    // pet window's own "open the full window" to the login form.
+    expect(
+      resolveInitialView({
+        bootstrap: {
+          ...baseBootstrap,
+          app: { ...baseBootstrap.app, userMode: "byok" as const },
+          onboarding: {
+            ...baseBootstrap.onboarding,
+            completed: true,
+            currentStep: "completed" as const,
+            completedAt: "2026-06-01T00:00:00.000Z"
+          }
+        },
+        preferredMode: "full",
+        cuberouterAccountBackend: true,
+        modelConfig: { catalog: { modelAssignments: { byok: { agent: { candidates: ["local-agent"] } } } } }
+      })
+    ).toBe("/main");
+  });
+
   it("only shows the token exhausted modal for account users with zero remaining tokens", () => {
     const zeroTokenAccount = {
       ...baseBootstrap,

@@ -2,6 +2,7 @@
 import type { AccountSessionView } from "@memmy/local-api-contracts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
 import { useApiClients } from "../app/providers.js";
+import { isCuberouterAccountBackend } from "../app/account-backend.js";
 import { FOCUSED_AGENT_CHAT_STORAGE_KEY, readGuidanceCompleted, resolveInitialView, type AppRoutePath, type ByokAgentModelAvailability } from "../app/routes.js";
 import type { MemmyAgentClient, MemmyAgentSessionSummary, MemmyAgentUnsubscribe, MemmyAgentWebSocketConnection, MemmyAgentWsEvent } from "../api/memmy-agent-client.js";
 import type { AsrClient } from "../api/asr-client.js";
@@ -273,7 +274,8 @@ export function resolvePetFullRoute(
     preferredMode: "full",
     accountSession: resolvePetFullRouteAccountSession(input),
     guidanceCompleted: input.guidanceCompleted ?? readGuidanceCompleted(typeof window === "undefined" ? undefined : window.localStorage),
-    modelConfig: input.modelConfig
+    modelConfig: input.modelConfig,
+    cuberouterAccountBackend: isCuberouterAccountBackend()
   });
 }
 
