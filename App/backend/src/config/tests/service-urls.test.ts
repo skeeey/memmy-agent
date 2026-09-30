@@ -49,7 +49,7 @@ describe("resolveCuberouterClientConfig", () => {
       model: "deepseek-flash",
       timeoutMs: 10_000,
       organizationId: null,
-      organizationTokenName: null
+      organizationTokenNamePrefix: null
     });
   });
 
@@ -69,11 +69,11 @@ describe("resolveCuberouterClientConfig", () => {
     )).toMatchObject({ model: "from-env", timeoutMs: 20_000 });
   });
 
-  it("reads the organization token name the build asked for", () => {
+  it("reads the organization token name prefix the build asked for", () => {
     expect(resolveCuberouterClientConfig({ MEMMY_CUBEROUTER_ORG_TOKEN_NAME: " team-desktop " })
-      .organizationTokenName).toBe("team-desktop");
-    // Unset means the desktop keeps looking for the name it always has.
-    expect(resolveCuberouterClientConfig({}).organizationTokenName).toBeNull();
+      .organizationTokenNamePrefix).toBe("team-desktop");
+    // Unset means the desktop keeps prefixing the per-account keys with the name it always has.
+    expect(resolveCuberouterClientConfig({}).organizationTokenNamePrefix).toBeNull();
   });
 
   it("reads the organization whose token supplies the API key", () => {

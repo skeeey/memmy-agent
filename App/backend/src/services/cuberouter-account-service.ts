@@ -69,14 +69,30 @@ export interface CreateCuberouterAccountServiceOptions {
   model: string;
   /** Organization whose token supplies the API key; null when unconfigured. */
   organizationId: string | null;
-  /** Name of that token inside the organization; null means the built-in default. */
-  organizationTokenName: string | null;
+  /** Prefix of the per-account token name; null means the built-in default. */
+  organizationTokenNamePrefix: string | null;
   log?: (message: string) => void;
 }
 
 /** Handles to cuberouter account uuid. */
 export function toCuberouterAccountUuid(userId: string): string {
   return `cuberouter:${userId}`;
+}
+
+/**
+ * The organization token an account reads. One key per person, named after the account, so the
+ * instance's console attributes a key to whoever holds it instead of pooling everyone behind one
+ * name. Usernames are email addresses on these deployments, and the domain says nothing about
+ * which person is asking; the local part is the part an administrator recognizes.
+ *
+ * Case and punctuation are kept exactly as the instance stores them: cuberouter usernames are
+ * case-sensitive, so a folded name would simply not match the key that was created.
+ */
+export function toDesktopTokenName(username: string, prefix: string = DESKTOP_TOKEN_NAME): string {
+  const trimmed = username.trim();
+  const domain = trimmed.indexOf("@");
+  const local = domain > 0 ? trimmed.slice(0, domain) : trimmed;
+  return `${prefix}-${local.trim()}`;
 }
 
 /** Creates create cuberouter account service. */
@@ -184,7 +200,9 @@ export function createCuberouterAccountService(
   ): Promise<CuberouterAuthResult> {
     const { client, url } = clientForNode(nodeId);
     const session = await client.login({ username, password });
-    const apiKey = await fetchOrganizationKey(client, session.accessToken);
+    // The name comes from what the instance reports, never from the typed string: an alias would
+    // name a key nobody created.
+    const apiKey = await fetchOrganizationKey(client, session.accessToken, session.username);
     // "New" is a question about this machine, and the account row is the wrong place to ask it:
     // a row whose uuid was written under a different spelling re-appears as new, and "new"
     // resets the guidance. The line memory is per username, survives a logout, and is written
@@ -223,13 +241,18 @@ export function createCuberouterAccountService(
   }
 
   /**
-   * Reads the desktop's API key from the organization. The desktop does not mint its own token:
-   * an administrator provisions one named `memmy-desktop` inside the organization, and members
-   * are handed that secret by the instance. Anything that prevents reading it — an organization
-   * that was never configured, no such token, or no permission to see it — is the member's cue
-   * to ask an administrator, not a provisioning retry.
+   * Reads the account's API key from the organization. The desktop does not mint its own token:
+   * an administrator provisions one per person, named after the account (see
+   * `toDesktopTokenName`), and the instance hands that secret to its member. Anything that
+   * prevents reading it — an organization that was never configured, no such token, or no
+   * permission to see it — is the member's cue to ask an administrator, not a provisioning
+   * retry.
    */
-  async function fetchOrganizationKey(client: CuberouterClient, accessToken: string): Promise<string> {
+  async function fetchOrganizationKey(
+    client: CuberouterClient,
+    accessToken: string,
+    username: string
+  ): Promise<string> {
     if (!options.organizationId) {
       throw Object.assign(
         new Error("未配置组织（MEMMY_CUBEROUTER_ORG），无法获取 API Key"),
@@ -237,10 +260,14 @@ export function createCuberouterAccountService(
       );
     }
 
-    const tokenName = options.organizationTokenName ?? DESKTOP_TOKEN_NAME;
+    const tokenName = toDesktopTokenName(
+      username,
+      options.organizationTokenNamePrefix ?? DESKTOP_TOKEN_NAME
+    );
     const organizationId = await resolveOrganizationId(client, accessToken, options.organizationId);
     const tokens = await client.listOrganizationTokens(accessToken, organizationId, tokenName);
-    // Exact match after the server's name filter: a prefix hit (a per-team key, say) is not ours.
+    // Exact match after the server's name filter: the filter is a substring match, so a longer
+    // name that merely starts with this account's (a second key, say) is not ours.
     const provisioned = tokens.find((token) => token.name === tokenName);
     if (!provisioned) {
       throw Object.assign(new Error("未取到组织 API Key，请联系管理员"), {

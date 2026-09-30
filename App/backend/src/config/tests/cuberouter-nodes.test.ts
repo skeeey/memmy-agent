@@ -28,7 +28,7 @@ describe("cuberouter node table", () => {
     // The two deployments this build talks to, and nothing else. An unusable or empty setting
     // is no setting: probes still sort out which one is reachable.
     expect(resolveCuberouterNodes({ env: {} })).toEqual([
-      { id: "cn", url: "https://cuberouter.cn" },
+      { id: "cn", url: "https://test.cuberouter.cn" },
       { id: "hk", url: "https://cuberouter.com" }
     ]);
     expect(resolveCuberouterNodes({ env: { MEMMY_CUBEROUTER_URLS: "  " } }).map((node) => node.id))

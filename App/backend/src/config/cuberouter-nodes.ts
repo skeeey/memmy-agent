@@ -25,7 +25,7 @@ export function parseCuberouterNodeTable(raw: string): CuberouterNode[] {
 
 /** The deployments a build talks to when nothing overrides them. */
 export const DEFAULT_CUBEROUTER_NODES: readonly CuberouterNode[] = Object.freeze([
-  { id: "cn", url: "https://cuberouter.cn" },
+  { id: "cn", url: "https://test.cuberouter.cn" },
   { id: "hk", url: "https://cuberouter.com" }
 ]);
 

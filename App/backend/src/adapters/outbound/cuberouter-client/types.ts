@@ -40,7 +40,7 @@ export interface CuberouterOrganizationToken {
   key: string;
 }
 
-/** Default name of the organization token the desktop provisions from. */
+/** Default prefix of the per-account organization token names the desktop provisions from. */
 export const DESKTOP_TOKEN_NAME = "memmy-desktop";
 
 export interface CuberouterClient {

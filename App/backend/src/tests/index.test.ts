@@ -1220,13 +1220,13 @@ async function startMockCuberouterServer(): Promise<string> {
 
     if (
       request.method === "GET"
-      && request.url === "/api/organizations/7/tokens?keyword=memmy-desktop&status=1&page_size=100"
+      && request.url === "/api/organizations/7/tokens?keyword=memmy-desktop-alice&status=1&page_size=100"
     ) {
       // Organizations hand members the full secret, which is what the desktop provisions from.
       sendJson(response, {
         success: true,
         message: "ok",
-        data: { items: [{ id: 11, name: "memmy-desktop", key: "sk-cuberouter" }], total: 1, page_size: 100 }
+        data: { items: [{ id: 11, name: "memmy-desktop-alice", key: "sk-cuberouter" }], total: 1, page_size: 100 }
       });
       return;
     }

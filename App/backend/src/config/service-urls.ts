@@ -24,8 +24,8 @@ export interface CuberouterClientConfig {
   timeoutMs: number;
   /** Organization whose token supplies the API key; null when unconfigured. */
   organizationId: string | null;
-  /** Name of that token inside the organization; null means the built-in default. */
-  organizationTokenName: string | null;
+  /** Prefix of the per-account token name inside the organization; null means the built-in default. */
+  organizationTokenNamePrefix: string | null;
 }
 
 /** Handles resolve cuberouter client config. Environment wins over the config file. */
@@ -37,6 +37,6 @@ export function resolveCuberouterClientConfig(
     model: env.MEMMY_CUBEROUTER_MODEL?.trim() || settings.model?.trim() || "deepseek-flash",
     timeoutMs: Number.parseInt(env.MEMMY_CUBEROUTER_TIMEOUT_MS ?? "", 10) || settings.timeoutMs || 10_000,
     organizationId: env.MEMMY_CUBEROUTER_ORG?.trim() || null,
-    organizationTokenName: env.MEMMY_CUBEROUTER_ORG_TOKEN_NAME?.trim() || null
+    organizationTokenNamePrefix: env.MEMMY_CUBEROUTER_ORG_TOKEN_NAME?.trim() || null
   };
 }
