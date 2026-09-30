@@ -4,12 +4,14 @@ import {
   ApiErrorBodySchema,
   CloseSessionOutputSchema,
   CompleteTurnOutputSchema,
+  SourceTurnCompleteOutputSchema,
   DeleteMemoryOutputSchema,
   DeletePanelTaskOutputSchema,
   EnqueueImportSummariesOutputSchema,
   GetMemoryOutputSchema,
   MemoryApiLogsOutputSchema,
   MemoryHealthSnapshotSchema,
+  MemoryTokenBudgetDtoSchema,
   MemoryProcessingStatusOutputSchema,
   MemoryReloadConfigOutputSchema,
   RecallEvidenceOutputSchema,
@@ -128,6 +130,10 @@ export function createHttpMemoryClient(
       return request("POST", "reloadConfig", MemoryReloadConfigOutputSchema, { body: input });
     },
 
+    async getMemoryTokenBudget() {
+      return request("GET", "memoryTokenBudget", MemoryTokenBudgetDtoSchema);
+    },
+
     async exportBundle() {
       return request("GET", "exportBundle", z.record(z.string(), z.unknown()));
     },
@@ -164,6 +170,10 @@ export function createHttpMemoryClient(
         body,
         context
       });
+    },
+
+    async completeSourceTurn(input, context) {
+      return request("POST", "completeSourceTurn", SourceTurnCompleteOutputSchema, { body: input, context });
     },
 
     async search(input, context) {

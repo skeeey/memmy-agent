@@ -6,7 +6,9 @@ import { bearer, postJsonWithRetry, trimTrailingSlash } from "./http.js";
 import {
   HttpByokTokenUsageRecorder,
   extractModelTokenUsage,
-  type MemoryLlmModelRole
+  type MemoryLlmModelRole,
+  type MemoryModelUsageEvent,
+  type MemoryTokenUsageSink
 } from "./token-usage.js";
 import type { LlmClient, LlmCompletionOptions, LlmMessage, ModelStatus } from "./types.js";
 
@@ -80,6 +82,8 @@ let summaryEncoder: ReturnType<typeof get_encoding> | undefined;
 
 export interface CreateLlmClientOptions {
   modelRole?: MemoryLlmModelRole;
+  onBudgetedUsage?: (event: MemoryModelUsageEvent) => void;
+  usageRecorder?: MemoryTokenUsageSink;
 }
 
 export function createLlmClient(config: LlmConfig, options: CreateLlmClientOptions = {}): LlmClient {
@@ -89,9 +93,13 @@ export function createLlmClient(config: LlmConfig, options: CreateLlmClientOptio
 class HttpLlmClient implements LlmClient {
   private lastOkAt: string | undefined;
   private lastError: string | undefined;
-  private readonly usageRecorder = new HttpByokTokenUsageRecorder();
+  private readonly usageRecorder: MemoryTokenUsageSink;
 
-  constructor(readonly config: LlmConfig, private readonly options: CreateLlmClientOptions = {}) {}
+  constructor(readonly config: LlmConfig, private readonly options: CreateLlmClientOptions = {}) {
+    this.usageRecorder = options.usageRecorder ?? new HttpByokTokenUsageRecorder({
+      onBudgetedUsage: options.onBudgetedUsage
+    });
+  }
 
   isConfigured(): boolean {
     if (!this.config.provider || this.config.provider === "local_only") {
@@ -729,7 +737,7 @@ function openAiCompatibleThinkingStyle(
   if (vendor === "qwen") return "enable_thinking";
   if (vendor === "minimax") return "minimax_direct";
   if (vendor === "baidu" && (slug.includes("ernie") || slug.includes("qwen"))) return "enable_thinking";
-  if (["deepseek", "zhipu", "kimi", "baidu", "doubao"].includes(vendor)) return "thinking_type";
+  if (["deepseek", "zhipu", "kimi", "baidu", "doubao", "xiaomi"].includes(vendor)) return "thinking_type";
   if (vendor === "openai_compatible" && isOpenAiReasoningModel(slug)) return "reasoning_effort";
   if (haystack.includes("dashscope") || haystack.includes("qwen")) return "enable_thinking";
   if (haystack.includes("minimax")) return "minimax_direct";

@@ -3,7 +3,7 @@ import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import YAML from "yaml";
 import { afterEach, describe, expect, it } from "vitest";
-import { BUILTIN_LOCAL_EMBEDDING_ASSIGNMENT_ID } from "@memmy/local-api-contracts";
+import { BUILTIN_LOCAL_EMBEDDING_ASSIGNMENT_ID } from "../src/contracts/model-catalog-resolver.js";
 import { defaultConfigPaths, loadMemmyConfig } from "../src/config/index.js";
 
 const roots: string[] = [];
@@ -69,9 +69,47 @@ describe("memmy memory config", () => {
       failureRTaskThreshold: -0.15,
       implicitConfidenceCap: 0.65
     });
+    expect(loadMemmyConfig(configPath).config.algorithm.feedback.valueDistributionRepairEnabled).toBe(false);
+    writeFileSync(configPath, YAML.stringify({
+      memmyMemory: {
+        algorithm: {
+          feedback: { valueDistributionRepairEnabled: true }
+        }
+      }
+    }));
+    expect(loadMemmyConfig(configPath).config.algorithm.feedback.valueDistributionRepairEnabled).toBe(true);
     expect(loadMemmyConfig(configPath).config.algorithm.retrieval.llmFilterEnabled).toBe(true);
     expect(loadMemmyConfig(configPath).config.domain).toBe("");
     expect(loadMemmyConfig(configPath).config.algorithm.retrieval.readOnlyInjectionProfile).toBe("all");
+    expect(loadMemmyConfig(configPath).config.tokenBudget).toEqual({
+      dailyLimitM: 10,
+      totalLimitM: 500
+    });
+  });
+
+  it("reads query extract history limits from retrieval config and defaults them", () => {
+    const root = tempRoot();
+    const configPath = join(root, "config.yaml");
+    writeFileSync(configPath, YAML.stringify({
+      memmyMemory: {}
+    }));
+
+    expect(loadMemmyConfig(configPath).config.algorithm.retrieval.queryExtractHistoryTurns).toBe(5);
+    expect(loadMemmyConfig(configPath).config.algorithm.retrieval.queryExtractHistoryTextChars).toBe(200);
+
+    writeFileSync(configPath, YAML.stringify({
+      memmyMemory: {
+        algorithm: {
+          retrieval: {
+            queryExtractHistoryTurns: 3,
+            queryExtractHistoryTextChars: 120
+          }
+        }
+      }
+    }));
+
+    expect(loadMemmyConfig(configPath).config.algorithm.retrieval.queryExtractHistoryTurns).toBe(3);
+    expect(loadMemmyConfig(configPath).config.algorithm.retrieval.queryExtractHistoryTextChars).toBe(120);
   });
 
   it("keeps summary thinking off and defaults evolution thinking on", () => {
