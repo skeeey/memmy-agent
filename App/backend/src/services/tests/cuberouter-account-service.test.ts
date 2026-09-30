@@ -388,6 +388,32 @@ describe("cuberouter account service", () => {
       .rejects.toMatchObject({ code: "invalid_argument", message: "用户名或密码错误" });
   });
 
+  it("keeps a provisioning failure instead of the rejection the other line answers with", async () => {
+    // The lines hold separate accounts, so the line this account is not on answers with a
+    // rejection every time. Reporting that one would tell a visitor who typed the right password
+    // that it is wrong, and bury the failure they can actually act on.
+    const service = createTestService({
+      nodes: TWO_NODES,
+      rememberedNodeId: "hk",
+      clientsByUrl: {
+        // The account is here: it signs in and only fails to find its key.
+        "https://hk.example": fakeClient({ listOrganizationTokens: vi.fn(async () => []) }),
+        // The account is not, which the instance reports the only way it can: bad credentials.
+        "https://cn.example": fakeClient({
+          login: vi.fn(async () => {
+            throw Object.assign(new Error("Username or password is incorrect, or user has been banned"), {
+              code: "rejected"
+            });
+          })
+        })
+      } as never
+    });
+
+    await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
+      code: "cuberouter_key_unavailable"
+    });
+  });
+
   it("ignores a remembered or current line that is no longer in the table", async () => {
     const attempts: string[] = [];
     const service = createTestService({
@@ -604,7 +630,7 @@ describe("cuberouter account service", () => {
 
     await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
       code: "cuberouter_key_unavailable",
-      message: "未取到组织 API Key，请联系管理员"
+      message: "未取到组织 API Key（memmy-desktop-alice），请联系管理员"
     });
   });
 

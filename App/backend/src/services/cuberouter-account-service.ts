@@ -29,6 +29,17 @@ const CUBEROUTER_ERROR_CODES: Record<CuberouterErrorCode, ApiErrorCode> = {
 };
 
 /**
+ * The cuberouter error code a failure carries, when the adapter gave it one. Read raw rather than
+ * through the mapped `ApiErrorCode`: several cuberouter codes map onto one local code, and the
+ * caller here needs to tell them apart.
+ */
+function cuberouterCode(error: unknown): CuberouterErrorCode | undefined {
+  return error && typeof error === "object" && "code" in error
+    ? (error as { code?: CuberouterErrorCode }).code
+    : undefined;
+}
+
+/**
  * Maps a cuberouter adapter failure onto the local API error contract, keeping the
  * server's own message. Without this every cuberouter rejection surfaces as HTTP 500
  * "internal" (see `withErrorEnvelope`'s unknown-code fallback), so a wrong password
@@ -36,9 +47,7 @@ const CUBEROUTER_ERROR_CODES: Record<CuberouterErrorCode, ApiErrorCode> = {
  */
 function toApiError(error: unknown): Error {
   const message = error instanceof Error ? error.message : String(error);
-  const code = error && typeof error === "object" && "code" in error
-    ? (error as { code?: CuberouterErrorCode }).code
-    : undefined;
+  const code = cuberouterCode(error);
   return Object.assign(new Error(message), { code: code ? CUBEROUTER_ERROR_CODES[code] : "internal" });
 }
 
@@ -270,7 +279,9 @@ export function createCuberouterAccountService(
     // name that merely starts with this account's (a second key, say) is not ours.
     const provisioned = tokens.find((token) => token.name === tokenName);
     if (!provisioned) {
-      throw Object.assign(new Error("未取到组织 API Key，请联系管理员"), {
+      // Name the key: one is issued per person, so "contact an administrator" only helps if it
+      // also says which one is missing.
+      throw Object.assign(new Error(`未取到组织 API Key（${tokenName}），请联系管理员`), {
         code: "organization_token_unavailable" as const
       });
     }
@@ -342,11 +353,22 @@ export function createCuberouterAccountService(
       }
 
       let lastError: Error | null = null;
+      // Held back rather than reported: see the rule below the loop.
+      let rejection: Error | null = null;
       for (const nodeId of order) {
         try {
           return await loginOnNode(nodeId, input.username, input.password);
         } catch (error) {
-          lastError = toApiError(error);
+          const apiError = toApiError(error);
+          // A rejection only means "wrong credentials" when nothing else went wrong. The lines
+          // hold separate accounts, so the line this one is not on answers with a rejection every
+          // time — reporting it would tell a visitor who typed the right password that it is
+          // wrong, and bury the failure they could have acted on.
+          if (cuberouterCode(error) === "rejected") {
+            rejection = apiError;
+          } else {
+            lastError = apiError;
+          }
           log(
             `[cuberouter] login on ${nodeId} failed, trying the next line: ${
               error instanceof Error ? error.message : String(error)
@@ -355,9 +377,9 @@ export function createCuberouterAccountService(
         }
       }
 
-      // Same shape the desktop shows today: with separate accounts per node, a rejection on
-      // both sides means wrong credentials just as often as it means the wrong line.
-      throw lastError ?? Object.assign(new Error("cuberouter 登录失败"), { code: "internal" as const });
+      // With both lines rejecting, wrong credentials remain the likeliest reading: the account
+      // exists on one of them, and the visitor is on the wrong one just as often.
+      throw lastError ?? rejection ?? Object.assign(new Error("cuberouter 登录失败"), { code: "internal" as const });
     },
 
     async logout() {
