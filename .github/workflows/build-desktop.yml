@@ -1,0 +1,143 @@
+name: Build desktop installers
+
+# Manual only, and artifacts only: nothing here publishes a release, so a build
+# can be produced and inspected before anyone decides what to do with it.
+#
+# Upstream's own release workflow downloads finished installers from OSS rather
+# than building them — their binaries come from internal CI — so this is ours to
+# write. It calls the same packaging scripts a developer runs locally, which
+# means the result is the build this repository defines, not a second pipeline.
+#
+# Signing stays off: the certificates are not in this repository's secrets, so
+# the installers are unsigned and the OS will warn on first launch. That is the
+# same trade the local packaging scripts already make.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to stamp (leave empty to use the version in package.json)
+        required: false
+        type: string
+      edition:
+        description: Desktop edition
+        required: false
+        default: intl
+        type: choice
+        options:
+          - intl
+          - cn
+      platforms:
+        description: Which installers to build
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - windows
+          - macos
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      edition: ${{ steps.version.outputs.edition }}
+      platforms: ${{ steps.version.outputs.platforms }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_EDITION: ${{ inputs.edition }}
+          INPUT_PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          set -euo pipefail
+          version="${INPUT_VERSION// /}"
+          if [ -z "$version" ]; then
+            version="$(node -p "require('./App/shell/desktop/package.json').version")"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "edition=${INPUT_EDITION:-intl}" >> "$GITHUB_OUTPUT"
+          echo "platforms=${INPUT_PLATFORMS:-all}" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: resolve
+    if: needs.resolve.outputs.platforms != 'macos'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      # The values the packaging chain reads from the repo-root .env. It refuses
+      # to run without them, and they are public endpoint origins, not secrets.
+      MEMMY_LEGAL_CN_BASE_URL: https://memmy.cn
+      MEMMY_LEGAL_INTL_BASE_URL: https://memmy.bot
+      MEMMY_CLOUD_SERVICE: https://api.memmy.cn
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the Windows installer
+        shell: bash
+        run: |
+          bash scripts/package-win.sh \
+            --version "${{ needs.resolve.outputs.version }}" \
+            --arch x64 \
+            --edition "${{ needs.resolve.outputs.edition }}" \
+            --sign unsigned
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: memmy-windows-${{ needs.resolve.outputs.version }}-${{ needs.resolve.outputs.edition }}
+          path: App/shell/desktop/release/*.exe
+          if-no-files-found: error
+      - name: Zip the unpacked build
+        shell: bash
+        run: |
+          # The packaged app is normally run from release/win-unpacked, which the
+          # local run script points at, so ship that too rather than only the
+          # installer.
+          cd App/shell/desktop/release
+          7z a -tzip "Memmy-${{ needs.resolve.outputs.version }}-win32-x64-${{ needs.resolve.outputs.edition }}-unpacked.zip" win-unpacked >/dev/null
+      - name: Upload the unpacked build
+        uses: actions/upload-artifact@v4
+        with:
+          name: memmy-windows-${{ needs.resolve.outputs.version }}-${{ needs.resolve.outputs.edition }}-unpacked
+          path: App/shell/desktop/release/*-unpacked.zip
+          if-no-files-found: error
+
+  macos:
+    needs: resolve
+    if: needs.resolve.outputs.platforms != 'windows'
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      MEMMY_LEGAL_CN_BASE_URL: https://memmy.cn
+      MEMMY_LEGAL_INTL_BASE_URL: https://memmy.bot
+      MEMMY_CLOUD_SERVICE: https://api.memmy.cn
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the macOS image
+        shell: bash
+        run: |
+          bash scripts/package-mac.sh \
+            --version "${{ needs.resolve.outputs.version }}" \
+            --arch arm64 \
+            --edition "${{ needs.resolve.outputs.edition }}" \
+            --sign unsigned
+      - name: Upload the image
+        uses: actions/upload-artifact@v4
+        with:
+          name: memmy-macos-${{ needs.resolve.outputs.version }}-${{ needs.resolve.outputs.edition }}
+          path: App/shell/desktop/release/*.dmg
+          if-no-files-found: error
