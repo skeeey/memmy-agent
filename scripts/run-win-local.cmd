@@ -6,6 +6,6 @@ rem The exe path is relative to this script, so it works wherever the repo lives
 
 set MEMMY_CUBEROUTER_URLS=cn=https://test.cuberouter.cn
 rem Must be a model that really exists on the instance above (K4 in the tracking doc).
-set MEMMY_CUBEROUTER_MODEL=kimi-k3-a
+set MEMMY_CUBEROUTER_MODEL=deepseek-v4.1-flash
 
 start "" "%~dp0..\App\shell\desktop\release\win-unpacked\Memmy.exe"

@@ -46,7 +46,7 @@ describe("service URL config", () => {
 describe("resolveCuberouterClientConfig", () => {
   it("falls back to the shipped model and timeout", () => {
     expect(resolveCuberouterClientConfig({})).toMatchObject({
-      model: "deepseek-flash",
+      model: "deepseek-v4.1-flash",
       timeoutMs: 10_000,
       organizationId: "yeebo",
       organizationTokenNamePrefix: null

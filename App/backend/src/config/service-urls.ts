@@ -41,7 +41,7 @@ export function resolveCuberouterClientConfig(
   settings: CuberouterSettings = {}
 ): CuberouterClientConfig {
   return {
-    model: env.MEMMY_CUBEROUTER_MODEL?.trim() || settings.model?.trim() || "deepseek-flash",
+    model: env.MEMMY_CUBEROUTER_MODEL?.trim() || settings.model?.trim() || "deepseek-v4.1-flash",
     timeoutMs: Number.parseInt(env.MEMMY_CUBEROUTER_TIMEOUT_MS ?? "", 10) || settings.timeoutMs || 10_000,
     organizationId: env.MEMMY_CUBEROUTER_ORG?.trim() || DEFAULT_CUBEROUTER_ORG,
     organizationTokenNamePrefix: env.MEMMY_CUBEROUTER_ORG_TOKEN_NAME?.trim() || null
