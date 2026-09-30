@@ -2,7 +2,6 @@ import { useComputerHistoryModelSync } from "./app/computer-history-model-sync.j
 import { isComputerHistorySupported } from "./app/computer-history-platform.js";
 /** App module. */
 import { SseEventSchema, type AccountSessionView, type SseEvent } from "@memmy/local-api-contracts";
-import rendererLog from "electron-log/renderer";
 import { rememberPublishedMemoryBudget } from "./components/memory-token-budget-banner.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { setAnalyticsUserId, setAnalyticsUserMode } from "./analytics/analytics-context.js";
@@ -250,16 +249,6 @@ function RuntimeApp() {
             return;
           }
         }
-
-        // Names every input the first screen is chosen from, so a packaged run can be read back
-        // from main.log. The login page and the API-key page are decided here and nowhere else.
-        rendererLog.info(
-          `[boot] userMode=${effectiveBootstrap.app.userMode}`
-          + ` candidates=${modelConfig?.catalog?.modelAssignments.byok.agent.candidates.length ?? "n/a"}`
-          + ` authed=${accountSession.authenticated}`
-          + ` step=${effectiveBootstrap.onboarding.currentStep} completed=${effectiveBootstrap.onboarding.completed}`
-          + ` -> ${initialPath}`
-        );
 
         setClients(clients);
         setAnalyticsUserMode(effectiveBootstrap.app.userMode);
