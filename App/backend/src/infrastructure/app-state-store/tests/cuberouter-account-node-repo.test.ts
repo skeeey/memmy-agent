@@ -35,15 +35,6 @@ describe("cuberouter account node memory", () => {
     reloaded.close();
   });
 
-  it("says whether this machine has ever signed anyone in", () => {
-    const { store } = createStore();
-
-    expect(store.repositories.cuberouterAccountNode.hasAny()).toBe(false);
-    store.repositories.cuberouterAccountNode.set("alice", "cn");
-    expect(store.repositories.cuberouterAccountNode.hasAny()).toBe(true);
-    store.close();
-  });
-
   it("keeps usernames case-sensitive", () => {
     const { store } = createStore();
 

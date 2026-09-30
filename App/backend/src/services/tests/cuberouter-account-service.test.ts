@@ -70,7 +70,6 @@ function createTestService(input: {
   onProbe?: () => void;
   organizationId?: string | null;
   organizationTokenName?: string | null;
-  knownAccount?: boolean;
   onOrganizationTokenLookup?: (tokenName: string, organizationId: string) => void;
   organizations?: Array<{ id: string; name: string }>;
   onOrganizationList?: () => void;
@@ -112,7 +111,6 @@ function createTestService(input: {
     clientFor: (url) => input.client ?? clientFor(url),
     accountSessionRepository: repository,
     accountNodes: {
-      hasAny: () => input.knownAccount ?? remembered.size > 0,
       get: (username: string) => remembered.get(username.trim()) ?? null,
       set: (username: string, nodeId: string) => {
         remembered.set(username.trim(), nodeId);
@@ -317,6 +315,39 @@ describe("cuberouter account service", () => {
     expect(result.provisioning.apiBase).toBe("https://hk.example/v1");
   });
 
+  it("tries the line the caller picked first, and still falls back", async () => {
+    // The picker is on the login form too: an account lives on one line, and the visitor knows
+    // which. The fallback stays, because a wrong pick and a wrong password look identical.
+    const attempts: string[] = [];
+    const service = createTestService({
+      nodes: TWO_NODES,
+      rememberedNodeId: "cn",
+      onLogin: (url) => {
+        attempts.push(url);
+        if (url === "https://hk.example") {
+          throw Object.assign(new Error("用户名或密码错误"), { code: "rejected" as const });
+        }
+      }
+    });
+
+    await service.login({ username: "alice", password: "Passw0rd1", nodeId: "hk" });
+
+    expect(attempts).toEqual(["https://hk.example", "https://cn.example"]);
+  });
+
+  it("ignores a picked line that is not in the table", async () => {
+    const attempts: string[] = [];
+    const service = createTestService({
+      nodes: TWO_NODES,
+      rememberedNodeId: "cn",
+      onLogin: (url) => attempts.push(url)
+    });
+
+    await service.login({ username: "alice", password: "Passw0rd1", nodeId: "mars" });
+
+    expect(attempts).toEqual(["https://cn.example"]);
+  });
+
   it("stops after two attempts even when a third line exists", async () => {
     const attempts: string[] = [];
     const service = createTestService({
@@ -416,17 +447,6 @@ describe("cuberouter account service", () => {
     const service = createTestService({ nodes: TWO_NODES, probeDefaultNodeId: null });
 
     await expect(service.probeNodes()).resolves.toMatchObject({ nodes: ["cn", "hk"], defaultNodeId: "hk" });
-  });
-
-  it("tells the sign-in form whether this machine has an account of its own", async () => {
-    // The form opens on whichever half a visitor needs, and a machine that has signed someone
-    // in before is the only evidence available: the instance never says whether a username
-    // exists.
-    const known = createTestService({ nodes: TWO_NODES, knownAccount: true });
-    const fresh = createTestService({ nodes: TWO_NODES, knownAccount: false });
-
-    await expect(known.probeNodes()).resolves.toMatchObject({ hasKnownAccount: true });
-    await expect(fresh.probeNodes()).resolves.toMatchObject({ hasKnownAccount: false });
   });
 
   it("never names a line the table does not have, and says so plainly when there is none", async () => {

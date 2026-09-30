@@ -41,8 +41,6 @@ export function AccountAuthPanel() {
   const [nodes, setNodes] = useState<string[]>([]);
   const [nodeId, setNodeId] = useState<string | null>(null);
   const [probingLine, setProbingLine] = useState(false);
-  // The probe answers the opening mode; a visitor who switches halves has answered it better.
-  const modeChosenByUser = useRef(false);
 
   useEffect(() => {
     if (!clients?.account) {
@@ -64,12 +62,6 @@ export function AccountAuthPanel() {
             ? probe.defaultNodeId
             : probe.nodes[0] ?? null
         );
-        // A machine that has signed someone in before opens on the login half, a fresh one on
-        // registration — but only until the visitor picks a half themselves.
-        if (!modeChosenByUser.current) {
-          modeChosenByUser.current = true;
-          setMode(probe.hasKnownAccount ? "login" : "register");
-        }
       } catch (error) {
         console.warn("cuberouter node probe failed", error);
         if (!cancelled) {
@@ -145,9 +137,9 @@ export function AccountAuthPanel() {
   }
 
   async function submit() {
-    // The line only matters when registering; blocking login on it would make the button do
-    // nothing at all for a user who never chose a line.
-    if (auth.pending || continuing || (mode === "register" && probingLine)) return;
+    // Both halves submit the line they picked, so both wait for the probe rather than sending
+    // a guess the user cannot see.
+    if (auth.pending || continuing || probingLine) return;
     setWarning(null);
     if (pendingAuthResult) {
       await continueAfterAuth(pendingAuthResult);
@@ -165,8 +157,9 @@ export function AccountAuthPanel() {
       email: mode === "register" ? email : undefined,
       verificationCode: mode === "register" ? verificationCode : undefined,
       emailVerificationRequired: mode === "register" && emailVerificationRequired,
-      // Which deployment the account is created on; ignored when logging in.
-      nodeId: mode === "register" ? nodeId ?? undefined : undefined
+      // Which deployment the account is looked up on: registration creates it there, and
+      // signing in has to reach the same one.
+      nodeId: nodeId ?? undefined
     };
     const result = mode === "register"
       ? await auth.register(credentials)
@@ -295,10 +288,10 @@ export function AccountAuthPanel() {
         verificationCode={verificationCode}
         nodes={nodes}
         selectedNodeId={nodeId}
-        probingLine={mode === "register" && probingLine}
+        probingLine={probingLine}
         sendingCode={code.sending}
         codeSecondsLeft={code.secondsLeft}
-        disabled={auth.pending || continuing || (mode === "register" && probingLine)}
+        disabled={auth.pending || continuing}
         feedback={auth.feedback ?? (warning ? { text: warning, tone: "error" } : null)}
         onUsernameChange={(next) => { clearPendingAuthResult(); setUsername(next); }}
         onPasswordChange={(next) => { clearPendingAuthResult(); setPassword(next); }}
@@ -307,12 +300,7 @@ export function AccountAuthPanel() {
         onVerificationCodeChange={(next) => { clearPendingAuthResult(); setVerificationCode(next); }}
         onNodeChange={(next) => { clearPendingAuthResult(); setNodeId(next); }}
         onSendCode={() => void sendVerificationCode()}
-        onModeChange={(next) => {
-          auth.clearFeedback();
-          clearPendingAuthResult();
-          modeChosenByUser.current = true;
-          setMode(next);
-        }}
+        onModeChange={(next) => { auth.clearFeedback(); clearPendingAuthResult(); setMode(next); }}
         onSubmit={() => void submit()}
         onOpenTerms={() => void openExternalUrl(getLegalLinkUrl("terms", language, state.bootstrap?.legal))}
         onOpenDataAgreement={() => void openExternalUrl(getLegalLinkUrl("data", language, state.bootstrap?.legal))}

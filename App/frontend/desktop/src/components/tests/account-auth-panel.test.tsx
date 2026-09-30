@@ -257,29 +257,6 @@ describe("AccountAuthPanel auth error copy", () => {
     expect(mocks.dispatch).toHaveBeenCalledWith(appActions.navigate("/onboarding"));
   });
 
-  it("opens a fresh machine on registration", async () => {
-    // Only the machine can answer this: the instance hides whether a username exists, so the
-    // one honest signal is whether anyone has ever signed in here.
-    renderPanel({
-      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
-      probeNodes: vi.fn(async () => ({ nodes: ["cn"], defaultNodeId: "cn", hasKnownAccount: false }))
-    });
-
-    await vi.waitFor(() => expect(buttonByLabel("account.register")).not.toBeNull());
-    // The way across is still there.
-    expect(buttonByLabel("account.switchToLogin")).not.toBeNull();
-  });
-
-  it("opens a machine that has signed someone in on login", async () => {
-    renderPanel({
-      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
-      probeNodes: vi.fn(async () => ({ nodes: ["cn"], defaultNodeId: "cn", hasKnownAccount: true }))
-    });
-
-    await vi.waitFor(() => expect(buttonByLabel("account.login")).not.toBeNull());
-    expect(buttonByLabel("account.switchToRegister")).not.toBeNull();
-  });
-
   it("keeps the half the visitor picked, whatever the probe says afterwards", async () => {
     let releaseProbe: (value: { nodes: string[]; defaultNodeId: string | null; hasKnownAccount: boolean }) => void =
       () => undefined;
@@ -296,10 +273,49 @@ describe("AccountAuthPanel auth error copy", () => {
     expect(buttonByLabel("account.login")).toBeNull();
   });
 
+  it("shows the line picker on the login form and sends the picked line", async () => {
+    // An account lives on one deployment, so signing in has to say which one — the same choice
+    // registration makes, and the backend tries it first.
+    const login = vi.fn(async () => authResult({ isNewUser: false }));
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
+      probeNodes: vi.fn(async () => ({ nodes: ["cn", "hk"], defaultNodeId: "cn" })),
+      login
+    });
+
+    await vi.waitFor(() => expect(radioByLabel("account.node.hk")).not.toBeNull());
+    await act(async () => radioByLabel("account.node.hk")!.click());
+    await setInput("account.usernamePlaceholder", "alice");
+    await setInput("account.passwordPlaceholder", "Passw0rd1");
+    await clickButton("account.login");
+
+    await vi.waitFor(() => expect(login).toHaveBeenCalledWith(
+      expect.objectContaining({ username: "alice", nodeId: "hk" })
+    ));
+  });
+
+  it("lets the visitor switch halves while the lines are still being measured", async () => {
+    let releaseProbe: (value: { nodes: string[]; defaultNodeId: string | null }) => void = () => undefined;
+    renderPanel({
+      registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false },
+      probeNodes: vi.fn(() => new Promise((resolve) => { releaseProbe = resolve; }))
+    });
+
+    // Only the submit waits; choosing a half is not the probe's business. The register half is
+    // on screen (its confirmation field is) while the submit still reports it is measuring.
+    await switchToRegister();
+    expect(inputByPlaceholder("account.confirmPasswordPlaceholder")).not.toBeNull();
+    expect(buttonByLabel("account.probingLine")).not.toBeNull();
+
+    await act(async () => releaseProbe({ nodes: ["cn"], defaultNodeId: "cn" }));
+    expect(buttonByLabel("account.register")).not.toBeNull();
+  });
+
   it("opens on the login form with the register link below it", async () => {
     renderPanel({ registrationRequirements: { emailVerificationRequired: false, turnstileRequired: false } });
 
-    expect(buttonByLabel("account.login")).not.toBeNull();
+    // The submit waits for the line probe, so it reads 登录 once that lands.
+    await vi.waitFor(() => expect(buttonByLabel("account.login")).not.toBeNull());
     expect(buttonByLabel("account.register")).toBeNull();
     expect(buttonByLabel("account.switchToRegister")).not.toBeNull();
     // The register-only fields stay out of the first screen.

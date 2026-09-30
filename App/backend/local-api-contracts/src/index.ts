@@ -1201,9 +1201,7 @@ export type CuberouterNodesView = z.infer<typeof CuberouterNodesViewSchema>;
 /** 探测结果：首次注册默认该用哪条线路（null = 都没探到）。 */
 export const CuberouterNodeProbeViewSchema = z.object({
     nodes: z.array(z.string()),
-    defaultNodeId: z.string().nullable(),
-    /** 这台机器此前登录过任何 cuberouter 账号（服务端不暴露用户名是否存在）。 */
-    hasKnownAccount: z.boolean()
+    defaultNodeId: z.string().nullable()
 });
 export type CuberouterNodeProbeView = z.infer<typeof CuberouterNodeProbeViewSchema>;
 

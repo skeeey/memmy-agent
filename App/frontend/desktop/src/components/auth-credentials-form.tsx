@@ -11,10 +11,10 @@ export interface AuthCredentialsFormProps {
   confirmPassword?: string;
   /** Rendered in register mode only, and only when the instance demands email verification. */
   emailVerificationRequired?: boolean;
-  /** Lines a new account may be registered on; the picker appears only when there is a choice. */
+  /** Lines an account can be registered on or signed in to; shown only when there is a choice. */
   nodes?: string[];
   selectedNodeId?: string | null;
-  /** True while the registration lines are being measured; the submit button says so. */
+  /** True while the lines are being measured; the submit button waits and says so. */
   probingLine?: boolean;
   onNodeChange?: (nodeId: string) => void;
   email?: string;
@@ -44,23 +44,27 @@ export function AuthCredentialsForm(props: AuthCredentialsFormProps) {
   const errorFeedback = props.feedback?.tone === "error" ? props.feedback : null;
 
   function submitOnEnter(event: { key: string }) {
-    if (event.key === "Enter" && !props.disabled) {
+    if (event.key === "Enter" && !props.disabled && !props.probingLine) {
       props.onSubmit();
     }
   }
 
   const showEmailVerification = props.mode === "register" && props.emailVerificationRequired === true;
   const codeBlocked = props.sendingCode || (props.codeSecondsLeft ?? 0) > 0;
+  // Only the submit waits for the line probe: switching halves or typing while it runs is fine.
+  const submitDisabled = Boolean(props.disabled) || Boolean(props.probingLine);
 
   return (
     <div className="space-y-3.5">
       {/*
-        Only in register mode, and only when there is a real choice: the line decides which
-        deployment the account lives on, and that is fixed the moment the account exists.
+        Both halves show it, and only when there is a real choice: an account lives on one
+        deployment, so signing in needs to say which — registration decides it just as much.
       */}
-      {props.mode === "register" && (props.nodes?.length ?? 0) > 1 ? (
+      {(props.nodes?.length ?? 0) > 1 ? (
         <fieldset className="space-y-2 text-left">
-          <legend className="text-xs text-text-ink/60">{t("account.line")}</legend>
+          <legend className="text-xs text-text-ink/60">
+            {props.mode === "register" ? t("account.line") : t("account.line.login")}
+          </legend>
           {/* Bordered options, not bare radios: two short labels sit next to each other here, and
               without a boundary they read as one string. */}
           <div className="flex flex-wrap gap-2.5">
@@ -199,13 +203,13 @@ export function AuthCredentialsForm(props: AuthCredentialsFormProps) {
 
       <button
         type="button"
-        disabled={props.disabled}
+        disabled={submitDisabled}
         onClick={props.onSubmit}
         className="w-full py-3 bg-action-sky text-white font-semibold rounded-btn hover:bg-action-sky-hover transition-all cursor-pointer shadow-md hover:shadow-lg active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
       >
-        {props.mode === "register"
-          ? props.probingLine ? t("account.probingLine") : t("account.register")
-          : t("account.login")}
+        {props.probingLine
+          ? t("account.probingLine")
+          : props.mode === "register" ? t("account.register") : t("account.login")}
       </button>
 
       <button

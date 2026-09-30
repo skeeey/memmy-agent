@@ -44,18 +44,15 @@ function toApiError(error: unknown): Error {
 
 export interface CuberouterAccountService {
   register(input: CuberouterAuthInput & { nodeId?: string }): Promise<CuberouterAuthResult>;
-  login(input: { username: string; password: string }): Promise<CuberouterAuthResult>;
+  login(input: { username: string; password: string; nodeId?: string }): Promise<CuberouterAuthResult>;
   /** Probes the target instance so the form matches what it will accept. */
   getRegistrationRequirements(nodeId?: string): Promise<CuberouterRegistrationRequirements>;
   /** Asks the target instance to email a verification code, for the line the caller picked. */
   sendEmailVerificationCode(email: string, nodeId?: string): Promise<{ ok: true }>;
   /** The configured lines and the one currently in effect. */
   getNodes(): Promise<{ nodes: string[]; currentNodeId: string | null }>;
-  /**
-   * Measures every line, reports which one a first registration should use, and whether this
-   * machine already has an account of its own.
-   */
-  probeNodes(): Promise<{ nodes: string[]; defaultNodeId: string | null; hasKnownAccount: boolean }>;
+  /** Measures every line and reports which one a first registration should use. */
+  probeNodes(): Promise<{ nodes: string[]; defaultNodeId: string | null }>;
   logout(): Promise<{ ok: true }>;
 }
 
@@ -133,10 +130,11 @@ export function createCuberouterAccountService(
    * probed default and the build's fallback. Only the first two are tried — the two deployments
    * hold separate accounts, so a third attempt would only add latency and login rate-limit risk.
    */
-  async function loginOrder(username: string): Promise<string[]> {
+  async function loginOrder(username: string, pickedNodeId?: string): Promise<string[]> {
     const inTable = (nodeId: string | null | undefined): nodeId is string =>
       Boolean(nodeId) && options.nodeRouter.getNodeUrl(nodeId!) !== null;
     const known = [
+      pickedNodeId,
       options.accountNodes.get(username),
       await options.nodeRouter.getPreferredNodeId()
     ].filter(inTable);
@@ -307,17 +305,11 @@ export function createCuberouterAccountService(
       const nodes = options.nodeRouter.listNodes().map((node) => node.id);
       // The UI preselects whatever this returns, so the fallback (nothing reachable → the
       // build's default line) is applied here rather than left for the caller to guess.
-      return {
-        nodes,
-        defaultNodeId: withFallback((await options.nodeRouter.probe()).defaultNodeId),
-        // The sign-in form opens on the half a visitor needs, and this is the only honest
-        // evidence: the instance never says whether a username exists.
-        hasKnownAccount: options.accountNodes.hasAny()
-      };
+      return { nodes, defaultNodeId: withFallback((await options.nodeRouter.probe()).defaultNodeId) };
     },
 
     async login(input) {
-      const order = await loginOrder(input.username);
+      const order = await loginOrder(input.username, input.nodeId);
       if (order.length === 0) {
         throw Object.assign(new Error("没有可用的 cuberouter 线路"), { code: "invalid_argument" as const });
       }
