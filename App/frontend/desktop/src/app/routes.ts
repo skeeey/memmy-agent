@@ -153,11 +153,11 @@ export function resolveInitialView(input: ResolveInitialViewInput): AppRoutePath
 
   if (input.bootstrap.app.userMode === "byok") {
     // A build whose accounts come from cuberouter holds nothing on its welcome page but the
-    // sign-in form, so a visitor it knows has no session is sent there. Reading the catalog first
-    // would strand them: a model config left behind by an earlier run empties it, and the stored
-    // mode is never rewritten — so the API-key page they landed on would stay their first screen
-    // for good. A caller that cannot answer the question — the pet window rebuilds a session from
-    // a lossy summary and passes none in byok mode — keeps the rules below untouched.
+    // sign-in form, so a visitor it knows has no session belongs there. Reading the catalog first
+    // would hand them the API-key page instead — a page that asks a cuberouter identity for a key
+    // its account already supplies, and offers the login form only behind a back link. A caller
+    // that cannot answer the question — the pet window rebuilds a session from a lossy summary and
+    // passes none in byok mode — keeps the rules below untouched.
     if (input.cuberouterAccountBackend && input.accountSession && !input.accountSession.authenticated) {
       return "/welcome";
     }
