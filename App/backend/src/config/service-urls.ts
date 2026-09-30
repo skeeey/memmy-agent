@@ -22,11 +22,18 @@ export interface CuberouterClientConfig {
   model: string;
   /** Timeout ms. */
   timeoutMs: number;
-  /** Organization whose token supplies the API key; null when unconfigured. */
+  /** Organization whose token supplies the API key; null only when a caller wires none. */
   organizationId: string | null;
   /** Prefix of the per-account token name inside the organization; null means the built-in default. */
   organizationTokenNamePrefix: string | null;
 }
+
+/**
+ * The organization a build reads its API keys from when nothing overrides it. Named rather than
+ * numbered: the two deployments give the same organization different ids, so an id baked in here
+ * would be wrong on one of them and every instance resolves the name to its own id instead.
+ */
+export const DEFAULT_CUBEROUTER_ORG = "yeebo";
 
 /** Handles resolve cuberouter client config. Environment wins over the config file. */
 export function resolveCuberouterClientConfig(
@@ -36,7 +43,7 @@ export function resolveCuberouterClientConfig(
   return {
     model: env.MEMMY_CUBEROUTER_MODEL?.trim() || settings.model?.trim() || "deepseek-flash",
     timeoutMs: Number.parseInt(env.MEMMY_CUBEROUTER_TIMEOUT_MS ?? "", 10) || settings.timeoutMs || 10_000,
-    organizationId: env.MEMMY_CUBEROUTER_ORG?.trim() || null,
+    organizationId: env.MEMMY_CUBEROUTER_ORG?.trim() || DEFAULT_CUBEROUTER_ORG,
     organizationTokenNamePrefix: env.MEMMY_CUBEROUTER_ORG_TOKEN_NAME?.trim() || null
   };
 }

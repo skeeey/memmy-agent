@@ -48,7 +48,7 @@ describe("resolveCuberouterClientConfig", () => {
     expect(resolveCuberouterClientConfig({})).toMatchObject({
       model: "deepseek-flash",
       timeoutMs: 10_000,
-      organizationId: null,
+      organizationId: "yeebo",
       organizationTokenNamePrefix: null
     });
   });
@@ -78,8 +78,9 @@ describe("resolveCuberouterClientConfig", () => {
 
   it("reads the organization whose token supplies the API key", () => {
     expect(resolveCuberouterClientConfig({ MEMMY_CUBEROUTER_ORG: " 7 " }).organizationId).toBe("7");
-    // No organization means the build cannot be provisioned, and the caller has to say so.
-    expect(resolveCuberouterClientConfig({}).organizationId).toBeNull();
-    expect(resolveCuberouterClientConfig({ MEMMY_CUBEROUTER_ORG: "  " }).organizationId).toBeNull();
+    // Unset means the shipped organization, so the packaged desktop reads its keys without
+    // anyone having to set a variable before launching it.
+    expect(resolveCuberouterClientConfig({}).organizationId).toBe("yeebo");
+    expect(resolveCuberouterClientConfig({ MEMMY_CUBEROUTER_ORG: "  " }).organizationId).toBe("yeebo");
   });
 });
