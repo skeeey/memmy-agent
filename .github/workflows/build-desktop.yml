@@ -36,6 +36,14 @@ on:
           - all
           - windows
           - macos
+      mirror:
+        description: Where packaging downloads its binaries from (off = GitHub)
+        required: false
+        default: "off"
+        type: choice
+        options:
+          - "off"
+          - cn
 
 permissions:
   contents: read
@@ -47,6 +55,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       edition: ${{ steps.version.outputs.edition }}
       platforms: ${{ steps.version.outputs.platforms }}
+      mirror: ${{ steps.version.outputs.mirror }}
     steps:
       - uses: actions/checkout@v4
       - id: version
@@ -54,6 +63,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_EDITION: ${{ inputs.edition }}
           INPUT_PLATFORMS: ${{ inputs.platforms }}
+          INPUT_MIRROR: ${{ inputs.mirror }}
         run: |
           set -euo pipefail
           version="${INPUT_VERSION// /}"
@@ -63,6 +73,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "edition=${INPUT_EDITION:-intl}" >> "$GITHUB_OUTPUT"
           echo "platforms=${INPUT_PLATFORMS:-all}" >> "$GITHUB_OUTPUT"
+          echo "mirror=${INPUT_MIRROR:-off}" >> "$GITHUB_OUTPUT"
 
   windows:
     needs: resolve
@@ -75,6 +86,9 @@ jobs:
       MEMMY_LEGAL_CN_BASE_URL: https://memmy.cn
       MEMMY_LEGAL_INTL_BASE_URL: https://memmy.bot
       MEMMY_CLOUD_SERVICE: https://api.memmy.cn
+      # package-win-local.sh defaults this to cn, so a developer machine and CI
+      # have been downloading their packaging binaries from different places.
+      MEMMY_PACKAGE_MIRROR: ${{ needs.resolve.outputs.mirror }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -84,7 +98,34 @@ jobs:
       - run: npm ci
       - name: Build the Windows installer
         shell: bash
+        env:
+          # Debug-level electron-builder output, so the packaging phase says
+          # which step it is in instead of going quiet for the whole of it.
+          DEBUG: electron-builder
         run: |
+          set -u
+
+          # electron-builder prints nothing between "copying unpacked Electron"
+          # and "building target=...", so a stall anywhere in that stretch is
+          # invisible in its own output. Sample the output directory on a timer
+          # instead: an app.asar that keeps growing means still working, a frozen
+          # one means stuck. This runs as its own process, so its lines reach the
+          # job log directly and keep arriving while the build is stalled.
+          unpacked_dir=App/shell/desktop/release/win-unpacked
+          watch_packaging() {
+            while true; do
+              printf '[watch %s] app.asar=%s files=%s free=%s\n' \
+                "$(date -u '+%H:%M:%S')" \
+                "$(stat -c %s "$unpacked_dir/resources/app.asar" 2>/dev/null || echo 0)" \
+                "$(find "$unpacked_dir" -type f 2>/dev/null | wc -l)" \
+                "$(df -h . 2>/dev/null | tail -1 | awk '{print $4}')"
+              sleep 60
+            done
+          }
+          watch_packaging &
+          watcher_pid=$!
+          trap 'kill "$watcher_pid" 2>/dev/null || true' EXIT
+
           bash scripts/package-win.sh \
             --version "${{ needs.resolve.outputs.version }}" \
             --arch x64 \
@@ -120,6 +161,7 @@ jobs:
       MEMMY_LEGAL_CN_BASE_URL: https://memmy.cn
       MEMMY_LEGAL_INTL_BASE_URL: https://memmy.bot
       MEMMY_CLOUD_SERVICE: https://api.memmy.cn
+      MEMMY_PACKAGE_MIRROR: ${{ needs.resolve.outputs.mirror }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
