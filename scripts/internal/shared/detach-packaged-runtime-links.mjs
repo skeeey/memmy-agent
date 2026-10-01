@@ -15,8 +15,11 @@
  * the job timeout. The packaged Memory runtime does not use that dependency;
  * it is an artifact of the workspace it was installed inside.
  *
- * Unlink, never rm -rf: on Windows, deleting a junction recursively deletes
- * what it points at — here, the repository.
+ * Unlink, never a recursive delete: this only needs the link gone, and what
+ * the link points at is the repository itself. Recursive-delete tools disagree
+ * about reparse points — PowerShell 5.1 was measured to leave the target alone,
+ * the MSYS rm the packaging shell runs is the one reported to follow the link —
+ * so this uses the operation that cannot touch the target either way.
  *
  * Usage: node detach-packaged-runtime-links.mjs <directory> [more directories]
  */
