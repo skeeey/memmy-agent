@@ -79,10 +79,7 @@ jobs:
     needs: resolve
     if: needs.resolve.outputs.platforms != 'macos'
     runs-on: windows-latest
-    # Temporary: normally 60. The probes abort the build after
-    # MEMMY_PROBE_ABORT_MS, so this only bounds the case where they cannot
-    # report at all.
-    timeout-minutes: 30
+    timeout-minutes: 60
     env:
       # The values the packaging chain reads from the repo-root .env. It refuses
       # to run without them, and they are public endpoint origins, not secrets.
@@ -92,10 +89,6 @@ jobs:
       # package-win-local.sh defaults this to cn, so a developer machine and CI
       # have been downloading their packaging binaries from different places.
       MEMMY_PACKAGE_MIRROR: ${{ needs.resolve.outputs.mirror }}
-      # Temporary: run the packaging probes that report what the app-file walk
-      # is stuck on (see build-nsis.sh). Remove once the stall is fixed.
-      MEMMY_PACKAGING_PROBE: "1"
-      MEMMY_PROBE_ABORT_MS: "480000"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -111,15 +104,6 @@ jobs:
           DEBUG: electron-builder
         run: |
           set -u
-
-          # Temporary, with MEMMY_PACKAGING_PROBE: an independent CPU sampler
-          # for the packaging process. The in-process probe can only report
-          # while the event loop still runs, so if the stall is a spin this is
-          # what shows it — CPU climbing means a busy loop, flat means a call
-          # that never returns.
-          if [ "${MEMMY_PACKAGING_PROBE:-}" = "1" ]; then
-            powershell.exe -NoProfile -Command 'while ($true) { Get-Process -Name node -ErrorAction SilentlyContinue | ForEach-Object { "{0:HH:mm:ss} [cpu-probe] pid={1} cpu={2:N0}s ws={3:N0}MB" -f (Get-Date), $_.Id, $_.CPU, ($_.WorkingSet64/1MB) }; Start-Sleep -Seconds 30 }' &
-          fi
 
           # electron-builder prints nothing between "copying unpacked Electron"
           # and "building target=...", so a stall anywhere in that stretch is

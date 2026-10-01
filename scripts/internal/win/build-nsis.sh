@@ -882,28 +882,6 @@ cp -R "$EMBEDDING_MODELS_DIR" "$RUNTIME_DIR/memory/embedding-models"
 package_step_start "Patch electron-builder NSIS template"
 patch_electron_builder_nsis_refresh
 
-# Diagnostic instrumentation for the CI stall: the Windows job hangs inside the
-# app-file walk electron-builder does below and prints nothing for the whole of
-# it, so the log says where the build entered that phase but never which path it
-# is stuck on. Both probes are inert unless MEMMY_PACKAGING_PROBE=1, which only
-# the build-desktop workflow sets. Remove together with the stall.
-if [ "${MEMMY_PACKAGING_PROBE:-}" = "1" ]; then
-  package_step_start "Diagnose stalled packaging: describe the app tree"
-  node "$ROOT_DIR/scripts/internal/shared/diagnose-app-tree.cjs" "$DESKTOP_DIR" || true
-
-  # In-process probe: reports the fs calls in flight while the build is stalled
-  # and exits the build once the stall outlasts MEMMY_PROBE_ABORT_MS, so a
-  # hanging run costs minutes instead of the job timeout. The path goes in with
-  # forward slashes: backslashes are not safe in NODE_OPTIONS.
-  if command -v cygpath >/dev/null 2>&1; then
-    PROBE_PATH="$(cygpath -m "$ROOT_DIR/scripts/internal/shared/diagnose-packaging-stall.cjs")"
-  else
-    PROBE_PATH="$ROOT_DIR/scripts/internal/shared/diagnose-packaging-stall.cjs"
-  fi
-  export NODE_OPTIONS="--require $PROBE_PATH"
-  log "Packaging probe armed: $PROBE_PATH"
-fi
-
 package_step_start "Run electron-builder Windows NSIS packaging"
 cd "$DESKTOP_DIR"
 
