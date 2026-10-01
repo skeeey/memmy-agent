@@ -679,6 +679,22 @@ install_better_sqlite3_win_x64() {
   )
 }
 
+# The runtime directories are installed inside the workspace, and npm resolves
+# the workspace root (this repository) as a file: dependency of a nested install
+# on Windows, leaving node_modules/memmy-agent pointing at the repository root.
+# electron-builder follows directory links when it walks the app for app.asar,
+# and so does its extraResources copy, so a single such link makes packaging
+# walk the repository, reach the link again one level deeper, and repeat until
+# the job times out without ever producing app.asar — which is exactly how the
+# CI Windows job used to spend an hour doing nothing. The packaged runtime does
+# not use that dependency; detach it, and fail on any link that appears, so the
+# next one is a loud error instead of a hung build.
+detach_packaged_runtime_links() {
+  local runtime_dir="$1"
+
+  node "$ROOT_DIR/scripts/internal/shared/detach-packaged-runtime-links.mjs" "$runtime_dir"
+}
+
 package_step_start "Validate Windows signing configuration"
 if [ "${MEMMY_SKIP_CODESIGN:-}" != "1" ]; then
   require_windows_signing_env
@@ -735,6 +751,8 @@ create_memory_runtime_manifest
 package_step_start "Install Windows x64 Memory runtime dependencies"
 npm_ci_win_x64 "$RUNTIME_DIR/memory"
 install_better_sqlite3_win_x64 "$RUNTIME_DIR/memory"
+package_step_start "Detach packaged Memory runtime links"
+detach_packaged_runtime_links "$RUNTIME_DIR/memory"
 package_step_start "Stage Windows Memory workspace runtime packages"
 RUNTIME_AGENT_SOURCE_CORE_DIR="$RUNTIME_DIR/memory/node_modules/@memmy/agent-source-core"
 rm -rf "$RUNTIME_AGENT_SOURCE_CORE_DIR"
@@ -758,6 +776,8 @@ cp "$AGENT_DIR/package-lock.json" "$RUNTIME_DIR/memmy-agent/package-lock.json"
 package_step_start "Install Windows x64 memmy-agent runtime dependencies"
 npm_ci_win_x64 "$RUNTIME_DIR/memmy-agent"
 install_better_sqlite3_win_x64 "$RUNTIME_DIR/memmy-agent"
+package_step_start "Detach packaged memmy-agent runtime links"
+detach_packaged_runtime_links "$RUNTIME_DIR/memmy-agent"
 package_step_start "Stage Windows memmy-agent workspace runtime packages"
 RUNTIME_LOCAL_API_CONTRACTS_DIR="$RUNTIME_DIR/memmy-agent/node_modules/@memmy/local-api-contracts"
 rm -rf "$RUNTIME_LOCAL_API_CONTRACTS_DIR"
