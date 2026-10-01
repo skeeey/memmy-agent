@@ -480,9 +480,13 @@ describe("desktop route table", () => {
     ).toBe("/welcome");
   });
 
-  it("keeps a signed-in cuberouter machine on its model setup", () => {
-    // Switching to a custom key is a registered user's choice, so an authenticated session must
-    // not be sent back to the login form merely because the build is a cuberouter one.
+  it("sends a signed-in cuberouter machine with no model back to the form that fetches one", () => {
+    // Signing in is what fetches this account's key, and this build hides the welcome page's
+    // "use your own API key" bypass, so nobody here chose to supply their own — an empty catalog
+    // means the stored config is gone, not that its owner picked another path. Leaving them on
+    // the API-key page would ask a cuberouter identity for a key its account already supplies.
+    // The login form repairs it: signing in re-reads the organization key, and the answer comes
+    // back on that form when it cannot (the key was withdrawn, say) instead of nowhere.
     expect(
       resolveInitialView({
         bootstrap: {
@@ -494,7 +498,30 @@ describe("desktop route table", () => {
         cuberouterAccountBackend: true,
         modelConfig: { catalog: { modelAssignments: { byok: { agent: { candidates: [] } } } } }
       })
-    ).toBe("/api-key");
+    ).toBe("/welcome");
+  });
+
+  it("leaves a signed-in cuberouter machine with a working model where it was", () => {
+    // The rule above answers an empty catalog only. A catalog that resolves must keep taking its
+    // owner to the workspace, or every launch of a healthy machine would ask for a password.
+    expect(
+      resolveInitialView({
+        bootstrap: {
+          ...baseBootstrap,
+          app: { ...baseBootstrap.app, userMode: "byok" as const },
+          onboarding: {
+            ...baseBootstrap.onboarding,
+            completed: true,
+            currentStep: "completed" as const,
+            completedAt: "2026-06-01T00:00:00.000Z"
+          }
+        },
+        preferredMode: "full",
+        accountSession: { authenticated: true },
+        cuberouterAccountBackend: true,
+        modelConfig: { catalog: { modelAssignments: { byok: { agent: { candidates: ["local-agent"] } } } } }
+      })
+    ).toBe("/main");
   });
 
   it("leaves a build that offers its own BYOK entry on the existing rules", () => {
@@ -535,6 +562,28 @@ describe("desktop route table", () => {
         modelConfig: { catalog: { modelAssignments: { byok: { agent: { candidates: ["local-agent"] } } } } }
       })
     ).toBe("/main");
+
+    // The same caller with an empty catalog keeps the API-key rule. This caller really does reach
+    // that rule — it hands over the whole app state, which carries a model config — so the only
+    // thing keeping it out of the rule above is the session it does not have. Reading that
+    // absence as "signed in" would send a pet window whose config was wiped to the login form.
+    expect(
+      resolveInitialView({
+        bootstrap: {
+          ...baseBootstrap,
+          app: { ...baseBootstrap.app, userMode: "byok" as const },
+          onboarding: {
+            ...baseBootstrap.onboarding,
+            completed: true,
+            currentStep: "completed" as const,
+            completedAt: "2026-06-01T00:00:00.000Z"
+          }
+        },
+        preferredMode: "full",
+        cuberouterAccountBackend: true,
+        modelConfig: { catalog: { modelAssignments: { byok: { agent: { candidates: [] } } } } }
+      })
+    ).toBe("/api-key");
   });
 
   it("only shows the token exhausted modal for account users with zero remaining tokens", () => {

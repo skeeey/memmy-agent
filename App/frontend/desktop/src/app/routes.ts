@@ -164,6 +164,19 @@ export function resolveInitialView(input: ResolveInitialViewInput): AppRoutePath
 
     if (input.modelConfig !== undefined &&
       !input.modelConfig?.catalog?.modelAssignments.byok.agent.candidates.length) {
+      // A cuberouter identity's key is fetched by signing in, and this build hides the welcome
+      // page's "use your own API key" bypass, so an empty catalog means the stored config is gone
+      // rather than that its owner picked another path. The sign-in form is the one place that
+      // repairs it — and the place a repair that cannot succeed reports itself, since the missing
+      // key names itself there instead of nowhere.
+      //
+      // A caller that cannot answer the session question keeps the rule below rather than being
+      // read as signed out: the pet window passes no session in byok mode, which is every
+      // cuberouter identity, and "no answer" is not an answer.
+      if (input.cuberouterAccountBackend && input.accountSession?.authenticated === true) {
+        return "/welcome";
+      }
+
       return "/api-key";
     }
 
