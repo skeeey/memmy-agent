@@ -71,4 +71,15 @@ export interface CuberouterClient {
     organizationId: string,
     tokenName: string
   ): Promise<CuberouterOrganizationToken[]>;
+  /**
+   * Creates an organization token held by the signed-in member, and returns its secret. The
+   * instance lets a member create only their own private keys, so those two facts are the
+   * request's shape and not parameters: a public key or another holder is refused with
+   * `permission denied` (see `ensureOrganizationTokenVisibilityAllowed`).
+   */
+  createOrganizationToken(
+    accessToken: string,
+    organizationId: string,
+    input: { name: string; unlimitedQuota: boolean }
+  ): Promise<CuberouterOrganizationToken>;
 }

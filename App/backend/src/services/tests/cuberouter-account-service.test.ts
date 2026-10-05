@@ -22,6 +22,11 @@ function fakeClient(overrides: Partial<CuberouterClient> = {}): CuberouterClient
     listOrganizationTokens: vi.fn(async (_token: string, _organizationId: string, tokenName: string) => [
       { id: 11, name: tokenName, key: "sk-org" }
     ]),
+    createOrganizationToken: vi.fn(async (_token: string, _organizationId: string, input: { name: string }) => ({
+      id: 12,
+      name: input.name,
+      key: "sk-org-created"
+    })),
     getSelf: vi.fn(async () => ({ userId: "7", username: "alice", displayName: "Alice", quota: 0 })),
     ...overrides
   };
@@ -37,6 +42,15 @@ function fakeRepository() {
     repository: { upsert, clear: vi.fn() } as any,
     upsert
   };
+}
+
+/** A create that answers the way the instance does: the key it was asked for, freshly made. */
+function createdKey(key = "sk-org-created") {
+  return vi.fn(async (_token: string, _organizationId: string, input: { name: string }) => ({
+    id: 12,
+    name: input.name,
+    key
+  }));
 }
 
 const TWO_NODES = [
@@ -107,6 +121,11 @@ function createTestService(input: {
         input.onOrganizationTokenLookup?.(tokenName, organizationId);
         return [{ id: 11, name: tokenName, key: "sk-org" }];
       },
+      createOrganizationToken: async (_token: string, _organizationId: string, createInput: { name: string }) => ({
+        id: 12,
+        name: createInput.name,
+        key: "sk-org-created"
+      }),
       getSelf: async () => ({ userId: "7", username: "alice", displayName: "Alice", quota: 0 })
     } satisfies CuberouterClient);
 
@@ -396,8 +415,13 @@ describe("cuberouter account service", () => {
       nodes: TWO_NODES,
       rememberedNodeId: "hk",
       clientsByUrl: {
-        // The account is here: it signs in and only fails to find its key.
-        "https://hk.example": fakeClient({ listOrganizationTokens: vi.fn(async () => []) }),
+        // The account is here: it signs in fine and only fails to get its key made.
+        "https://hk.example": fakeClient({
+          listOrganizationTokens: vi.fn(async () => []),
+          createOrganizationToken: vi.fn(async () => {
+            throw Object.assign(new Error("permission denied"), { code: "rejected" });
+          })
+        }),
         // The account is not, which the instance reports the only way it can: bad credentials.
         "https://cn.example": fakeClient({
           login: vi.fn(async () => {
@@ -410,7 +434,8 @@ describe("cuberouter account service", () => {
     });
 
     await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
-      code: "cuberouter_key_unavailable"
+      code: "cuberouter_key_unavailable",
+      message: "创建组织 API Key（memmy-desktop-alice）失败：permission denied"
     });
   });
 
@@ -619,19 +644,76 @@ describe("cuberouter account service", () => {
     });
   });
 
-  it("asks the member to contact the administrator when the organization has no desktop token", async () => {
-    // A member with no usable key cannot be provisioned. Say who can fix it rather than
-    // reporting a provisioning failure they cannot act on.
+  it("says what it was doing when the instance refuses to create the key", async () => {
+    // The same refusal means different things at login and at creation, so the instance's own
+    // message is kept and the key's name is added: it is what an operator would have to look at.
     const client = fakeClient({
-      listOrganizationTokens: vi.fn(async () => [{ id: 3, name: "someone-elses-key", key: "sk-other" }])
+      listOrganizationTokens: vi.fn(async () => [{ id: 3, name: "someone-elses-key", key: "sk-other" }]),
+      createOrganizationToken: vi.fn(async () => {
+        throw Object.assign(new Error("permission denied"), { code: "rejected" });
+      })
     });
     const { repository } = fakeRepository();
     const service = singleNodeService(client, repository);
 
     await expect(service.login({ username: "alice", password: "Passw0rd1" })).rejects.toMatchObject({
       code: "cuberouter_key_unavailable",
-      message: "未取到组织 API Key（memmy-desktop-alice），请联系管理员"
+      message: "创建组织 API Key（memmy-desktop-alice）失败：permission denied"
     });
+  });
+
+  it("creates this account's key when the organization has none yet", async () => {
+    // Self-service: a registered member with no pre-provisioned key gets one made for them and
+    // held by their own account, in the shape the console's own create form defaults to.
+    const createOrganizationToken = createdKey();
+    const client = fakeClient({
+      listOrganizationTokens: vi.fn(async () => []),
+      createOrganizationToken
+    });
+    const { repository } = fakeRepository();
+    const service = singleNodeService(client, repository);
+
+    const result = await service.login({ username: "alice", password: "Passw0rd1" });
+
+    expect(createOrganizationToken).toHaveBeenCalledWith("jwt-1", "7", {
+      name: "memmy-desktop-alice",
+      unlimitedQuota: true
+    });
+    expect(result.provisioning).toEqual({
+      apiKey: "sk-org-created",
+      apiBase: "http://127.0.0.1:3000/v1",
+      model: "deepseek-flash"
+    });
+  });
+
+  it("keeps a name that merely starts with this account's out of the lookup", async () => {
+    // The server's keyword filter is a substring match: a longer name that only starts with
+    // this account's is not this account's key, and must not be handed to the desktop.
+    const createOrganizationToken = createdKey();
+    const client = fakeClient({
+      listOrganizationTokens: vi.fn(async () => [
+        { id: 3, name: "memmy-desktop-alice-2", key: "sk-almost" }
+      ]),
+      createOrganizationToken
+    });
+    const { repository } = fakeRepository();
+    const service = singleNodeService(client, repository);
+
+    const result = await service.login({ username: "alice", password: "Passw0rd1" });
+
+    expect(createOrganizationToken).toHaveBeenCalledTimes(1);
+    expect(result.provisioning.apiKey).toBe("sk-org-created");
+  });
+
+  it("reuses the key it finds instead of creating a second one", async () => {
+    const client = fakeClient();
+    const { repository } = fakeRepository();
+    const service = singleNodeService(client, repository);
+
+    const result = await service.login({ username: "alice", password: "Passw0rd1" });
+
+    expect(client.createOrganizationToken).not.toHaveBeenCalled();
+    expect(result.provisioning.apiKey).toBe("sk-org");
   });
 
   it("names the missing build setting when no organization is configured", async () => {

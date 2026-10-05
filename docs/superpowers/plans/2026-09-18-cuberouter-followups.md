@@ -228,6 +228,13 @@ user_mode=byok, active_uuid=cuberouter:10113
 
 **测试**：适配器 +4（请求形状、丢弃不合格行、权限拒绝的服务端消息、传输失败）、服务 +2（组织没有该 token / 没配组织变量）、配置 +1（读 `MEMMY_CUBEROUTER_ORG`）；集成测试的假 cuberouter 服务改成提供组织 token。后端 917 / 桌面 1577 全绿。
 
+**2026-10-05 更新：改为自助**。「取不到一律同一句（请联系管理员）」不再成立——组织里有那把预置 key 的老路径保留（先读、命中即复用，管理员手工发的 key 与自建的是同一把），落空时改为桌面端自建：
+
+- 新增 `POST /api/organizations/<orgId>/tokens`（`createOrganizationToken`），请求形状是 `name` + `visibility: private` + `unlimited_quota`。private 不是选择而是成员能建的唯一可见性（public 要 `manage_all_tokens`，成员会拿到 `permission denied`）；unlimited 是控制台创建表单的默认值，且**不给额度等于建一把用不了的 key**——非无限令牌在每次请求前会被 `PreConsumeTokenQuota` 拿 `remain_quota` 卡住
+- 失败仍是 `cuberouter_key_unavailable`（HTTP 503），但消息带上钥匙名和实例原话：`创建组织 API Key（<name>）失败：<实例消息>`。刻意不沿用服务端的 `rejected`：登录循环把那个 code 当"密码错"藏起来（`cuberouter-account-service.ts` 的 `loginOrder`/登录循环），而这里账号已经登录成功了
+- 前提：该账号是该组织的活跃成员（服务端 `ensureOrganizationTokenResponsibleUserWithTx` 强制），加入靠邀请或 join rule
+- 额度风险：这把 key 走组织池，成员身上没有服务端限额；`name` 不唯一也没有"一人一把"约束。详见 `~/workspace/cuberouter-issues/org-token-self-service.md`（含给 cuberouter 侧的加固建议）
+
 
 ### F10 `MEMMY_CUBEROUTER_MODEL` 单值够不够，要不要改成数组（2026-09-24 讨论，结论：先不改）
 

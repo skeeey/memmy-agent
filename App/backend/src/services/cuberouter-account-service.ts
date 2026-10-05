@@ -211,7 +211,7 @@ export function createCuberouterAccountService(
     const session = await client.login({ username, password });
     // The name comes from what the instance reports, never from the typed string: an alias would
     // name a key nobody created.
-    const apiKey = await fetchOrganizationKey(client, session.accessToken, session.username);
+    const apiKey = await ensureOrganizationKey(client, session.accessToken, session.username);
     // "New" is a question about this machine, and the account row is the wrong place to ask it:
     // a row whose uuid was written under a different spelling re-appears as new, and "new"
     // resets the guidance. The line memory is per username, survives a logout, and is written
@@ -250,14 +250,16 @@ export function createCuberouterAccountService(
   }
 
   /**
-   * Reads the account's API key from the organization. The desktop does not mint its own token:
-   * an administrator provisions one per person, named after the account (see
-   * `toDesktopTokenName`), and the instance hands that secret to its member. Anything that
-   * prevents reading it — an organization that was never configured, no such token, or no
-   * permission to see it — is the member's cue to ask an administrator, not a provisioning
-   * retry.
+   * The account's API key inside the organization, read back when it exists and created when it
+   * does not. The name is the account's (see `toDesktopTokenName`), so an administrator's
+   * hand-provisioned key and this account's own key are the same key: the read comes first and a
+   * returning account reuses what it — or the operator — already made. Only a miss creates.
+   *
+   * A created key takes the shape the console's own create form defaults to: held by this
+   * account, private to it, and unlimited — the organization's pool is the budget, and a
+   * per-key quota would strand the key the moment it ran out.
    */
-  async function fetchOrganizationKey(
+  async function ensureOrganizationKey(
     client: CuberouterClient,
     accessToken: string,
     username: string
@@ -278,14 +280,29 @@ export function createCuberouterAccountService(
     // Exact match after the server's name filter: the filter is a substring match, so a longer
     // name that merely starts with this account's (a second key, say) is not ours.
     const provisioned = tokens.find((token) => token.name === tokenName);
-    if (!provisioned) {
-      // Name the key: one is issued per person, so "contact an administrator" only helps if it
-      // also says which one is missing.
-      throw Object.assign(new Error(`未取到组织 API Key（${tokenName}），请联系管理员`), {
+    if (provisioned) {
+      return provisioned.key;
+    }
+
+    try {
+      const created = await client.createOrganizationToken(accessToken, organizationId, {
+        name: tokenName,
+        unlimitedQuota: true
+      });
+      log(`[cuberouter] created organization key ${tokenName} for ${username}`);
+      return created.key;
+    } catch (error) {
+      // Say what the desktop was doing, and keep the instance's own sentence: the same refusal
+      // ("permission denied") means something different at login than at creation, and the
+      // reason — not a membership, a name too long, the key limit reached — lives in that text.
+      //
+      // Never the raw code: `rejected` is how the login loop recognises wrong credentials, and
+      // this account has just authenticated. What failed is the key, not the password.
+      const message = error instanceof Error ? error.message : String(error);
+      throw Object.assign(new Error(`创建组织 API Key（${tokenName}）失败：${message}`), {
         code: "organization_token_unavailable" as const
       });
     }
-    return provisioned.key;
   }
 
   return {

@@ -138,4 +138,61 @@ describe("cuberouter organization tokens", () => {
       clientWith(fetchImpl as unknown as typeof fetch).listOrganizationTokens("jwt-1", "7", "memmy-desktop")
     ).rejects.toMatchObject({ code: "service_unavailable" });
   });
+
+  it("creates the member's own key and returns its secret", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({
+        success: true,
+        message: "",
+        data: { id: 12, name: "memmy-desktop-alice", key: "sk-org-new", key_preview: "sk-o**********new" }
+      })
+    );
+
+    const created = await clientWith(fetchImpl as unknown as typeof fetch)
+      .createOrganizationToken("jwt-1", "7", { name: "memmy-desktop-alice", unlimitedQuota: true });
+
+    expect(created).toEqual({ id: 12, name: "memmy-desktop-alice", key: "sk-org-new" });
+    const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://127.0.0.1:3000/api/organizations/7/tokens");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      name: "memmy-desktop-alice",
+      visibility: "private",
+      unlimited_quota: true
+    });
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer jwt-1");
+    expect(init.headers).toMatchObject({
+      "X-Account-Context-Type": "organization",
+      "X-Account-Context-Id": "7"
+    });
+  });
+
+  it("surfaces the server message when creating the key is refused", async () => {
+    // A member who is not (or no longer) in the organization is refused here rather than at
+    // list time, so this message is what the desktop shows.
+    const fetchImpl = vi.fn(async () =>
+      new Response(JSON.stringify({ success: false, message: "permission denied" }), {
+        status: 400,
+        headers: { "content-type": "application/json" }
+      })
+    );
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch)
+        .createOrganizationToken("jwt-1", "7", { name: "memmy-desktop-alice", unlimitedQuota: true })
+    ).rejects.toMatchObject({ code: "rejected", message: "permission denied" });
+  });
+
+  it("refuses a created token that carries no key", async () => {
+    // Provisioning would write an empty key into the model config and look like a working
+    // setup, so a response without the secret is an error rather than an empty token.
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ success: true, message: "", data: { id: 12, name: "memmy-desktop-alice" } })
+    );
+
+    await expect(
+      clientWith(fetchImpl as unknown as typeof fetch)
+        .createOrganizationToken("jwt-1", "7", { name: "memmy-desktop-alice", unlimitedQuota: true })
+    ).rejects.toMatchObject({ code: "rejected" });
+  });
 });

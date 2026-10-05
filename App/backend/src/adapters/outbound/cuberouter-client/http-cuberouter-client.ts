@@ -115,6 +115,30 @@ export function createHttpCuberouterClient(options: CreateHttpCuberouterClientOp
         { method: "GET", accessToken, headers: organizationContextHeaders(organizationId) }
       );
       return toOrganizationTokens(Array.isArray(response.items) ? response.items : []);
+    },
+
+    async createOrganizationToken(accessToken, organizationId, input) {
+      const data = await request<Record<string, unknown>>(
+        fetchImpl,
+        baseUrl,
+        options.timeoutMs,
+        `/api/organizations/${encodeURIComponent(organizationId)}/tokens`,
+        {
+          method: "POST",
+          accessToken,
+          headers: organizationContextHeaders(organizationId),
+          body: {
+            name: input.name,
+            // Members may only create private keys — public needs manage_all_tokens, which the
+            // instance refuses for them — so the caller decides the quota and nothing else.
+            visibility: "private",
+            // No quota means no spendable key, not a conservative default: a limited token is
+            // checked against its own remain_quota before every request.
+            unlimited_quota: input.unlimitedQuota
+          }
+        }
+      );
+      return toOrganizationToken(data);
     }
   };
 }
@@ -213,6 +237,19 @@ function toOrganizationTokens(items: unknown[]): CuberouterOrganizationToken[] {
     const key = readString(row.key);
     return id === null || !name || !key ? [] : [{ id, name, key }];
   });
+}
+
+/**
+ * The single row a create answers with, mapped like a list row. A response without a usable key
+ * is an error rather than an empty token: provisioning would write it into the model config and
+ * the setup would look complete while every request failed.
+ */
+function toOrganizationToken(row: Record<string, unknown>): CuberouterOrganizationToken {
+  const mapped = toOrganizationTokens([row])[0];
+  if (!mapped) {
+    throw cuberouterError("rejected", "cuberouter 创建组织密钥时未返回 key");
+  }
+  return mapped;
 }
 
 /** Reads a non-negative integer count (a page total); returns null when the field is unusable. */
